@@ -320,7 +320,7 @@ class TribeModel(TribeExperiment):
         return get_audio_and_text_events(pd.DataFrame([event]))
 
     def predict(
-        self, events: pd.DataFrame, verbose: bool = True
+        self, events: pd.DataFrame, verbose: bool = True, gradio_progress=None
     ) -> tuple[np.ndarray, list]:
         """Run inference on an events DataFrame and return per-TR predictions.
 
@@ -359,7 +359,12 @@ class TribeModel(TribeExperiment):
         preds, all_segments = [], []
         n_samples, n_kept = 0, 0
         with torch.inference_mode():
-            for batch in tqdm(loader, disable=not verbose):
+            total_batches = len(loader)
+            for i, batch in enumerate(tqdm(loader, disable=not verbose)):
+                if gradio_progress is not None:
+                    # Maps the 40% -> 80% range for the UI progress bar smoothly
+                    pct = 0.4 + 0.4 * (i / max(1, total_batches))
+                    gradio_progress((pct, 1.0), desc=f"Mapping Batch {i+1}/{total_batches} to Cortex...")
                 batch = batch.to(model.device)
                 batch_segments = []
                 for segment in batch.segments:

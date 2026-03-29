@@ -1,0 +1,90 @@
+/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/base.py:707: UserWarning: LabelEncoder: event_types has not been set, are you sure you want to apply this extractor to all events?
+  warnings.warn(
+2026-03-29 16:33:20 - WARNING - neuralset.extractors.base:798 - Missing events will be encoded using the default all-zero value (for example, 0 or a zero vector/tensor), which may be indistinguishable from a valid class if that class is also mapped to zeros. Set treat_missing_as_separate_class=True to avoid this.
+2026-03-29 16:33:21 - WARNING - neuralset.extractors.base:798 - Missing events will be encoded using the default all-zero value (for example, 0 or a zero vector/tensor), which may be indistinguishable from a valid class if that class is also mapped to zeros. Set treat_missing_as_separate_class=True to avoid this.
+INFO - Loading model from /Users/rein0ne/.cache/huggingface/hub/models--facebook--tribev2/snapshots/f894e783020944dcd96e5568550afe2aa9743f9f/best.ckpt
+/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/x_transformers/x_transformers.py:439: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @autocast(enabled = False)
+/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/x_transformers/x_transformers.py:461: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @autocast(enabled = False)
+[16:33:21 WARNING] Removing extractor video as there are no corresponding events
+[16:33:21 INFO] Preparing extractor: text
+  0%|          | 0/11 [00:00<?, ?it/s]
+Computing word embeddings:   0%|          | 0/3 [00:00<?, ?it/s][A
+
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s][A[A
+
+Fetching 2 files:  50%|█████     | 1/2 [05:20<05:20, 321.00s/it][A[A
+
+Fetching 2 files: 100%|██████████| 2/2 [06:27<00:00, 171.24s/it][A[AFetching 2 files: 100%|██████████| 2/2 [06:27<00:00, 193.71s/it]
+
+
+Loading weights:   0%|          | 0/254 [00:00<?, ?it/s][A[ALoading weights: 100%|██████████| 254/254 [00:00<00:00, 3690.52it/s]
+Computing word embeddings:   0%|          | 0/3 [06:29<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/text.py", line 312, in model
+    self._model = self._load_model()
+                  ~~~~~~~~~~~~~~~~^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/text.py", line 350, in _load_model
+    model.to(self.device)
+    ~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/transformers/modeling_utils.py", line 3572, in to
+    return super().to(*args, **kwargs)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1343, in to
+    return self._apply(convert)
+           ~~~~~~~~~~~^^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 903, in _apply
+    module._apply(fn)
+    ~~~~~~~~~~~~~^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 930, in _apply
+    param_applied = fn(param)
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1329, in convert
+    return t.to(
+           ~~~~^
+        device,
+        ^^^^^^^
+        dtype if t.is_floating_point() or t.is_complex() else None,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        non_blocking,
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/torch/cuda/__init__.py", line 310, in _lazy_init
+    raise AssertionError("Torch not compiled with CUDA enabled")
+AssertionError: Torch not compiled with CUDA enabled
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/rein0ne/Downloads/tribev2-main/run_quickstart.py", line 6, in <module>
+    preds, segments = model.predict(events=df)
+                      ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/tribev2/demo_utils.py", line 357, in predict
+    loader = self.data.get_loaders(events=events, split_to_build="all")["all"]
+             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/tribev2/main.py", line 216, in get_loaders
+    extractor.prepare(events)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/base.py", line 202, in prepare
+    self._get_data(events)
+    ~~~~~~~~~~~~~~^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/exca/map.py", line 350, in _method_override
+    return self._method_override_futures(items)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/exca/map.py", line 472, in _method_override_futures
+    out = self._call_and_store(
+        [ki[1] for ki in missing], use_cache_dict=cached
+    )
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/exca/map.py", line 541, in _call_and_store
+    for item, output in in_out:
+                        ^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/text.py", line 413, in _get_data
+    inputs = self.tokenizer(
+             ^^^^^^^^^^^^^^
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/text.py", line 356, in tokenizer
+    self.model
+  File "/Users/rein0ne/Downloads/tribev2-main/venv/lib/python3.13/site-packages/neuralset/extractors/text.py", line 316, in model
+    raise RuntimeError("Model loading went wrong") from e
+RuntimeError: Model loading went wrong
+  0%|          | 0/11 [06:29<?, ?it/s]
