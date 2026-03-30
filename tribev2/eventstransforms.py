@@ -112,10 +112,15 @@ class ExtractWordsFromAudio(EventsTransform):
             device = "cpu"
             compute_type = "int8"
 
+        import sys
         with tempfile.TemporaryDirectory() as output_dir:
-            logger.info("Running whisperx via uvx...")
+            logger.info("Running whisperx via uv tool run...")
             cmd = [
-                "uvx",
+                sys.executable,
+                "-m",
+                "uv",
+                "tool",
+                "run",
                 "whisperx",
                 str(wav_filename),
                 "--model",
