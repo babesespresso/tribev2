@@ -107,10 +107,8 @@ class ExtractWordsFromAudio(EventsTransform):
         if torch.cuda.is_available():
             device = "cuda"
             compute_type = "float16"
-        elif torch.backends.mps.is_available():
-            device = "mps"
-            compute_type = "int8"
         else:
+            # WhisperX uses CTranslate2 which only supports CUDA and CPU (not MPS)
             device = "cpu"
             compute_type = "int8"
 
