@@ -22,6 +22,8 @@ nibabel>=5.4
 nilearn>=0.13
 scipy>=1.17
 pydantic>=2.12
+colorcet
+seaborn
 
 # UI
 gradio>=5.0
