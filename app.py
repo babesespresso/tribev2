@@ -61,34 +61,44 @@ def get_history_choices():
         return []
     choices = []
     for r in runs:
-        ts = datetime.fromisoformat(r["timestamp"]).strftime("%b %d, %Y %I:%M %p")
-        label = f"{ts}  |  {r['stimulus_type']}  |  {r['stimulus'][:60]}"
-        choices.append((label, r["id"]))
+        ts = datetime.fromisoformat(r["timestamp"]).strftime("%b %d %I:%M%p")
+        label = f"[{r['id']}] {ts} - {r['stimulus_type']} - {r['stimulus'][:50]}"
+        choices.append(label)
     return choices
 
-def view_run(run_id):
+def _extract_run_id(choice_str):
+    """Extract run ID from dropdown choice string like '[20260329_211449] ...'"""
+    if not choice_str:
+        return None
+    if choice_str.startswith("["):
+        return choice_str.split("]")[0][1:]
+    return choice_str
+
+def view_run(choice_str):
     """Load a specific run's plot and analysis."""
+    run_id = _extract_run_id(choice_str)
     if not run_id:
         return None, "*Select a run from the dropdown above.*"
     run_dir = RUNS_DIR / run_id
     meta_path = run_dir / "meta.json"
     plot_path = run_dir / "brain_map.png"
     if not meta_path.exists():
-        return None, "Run not found."
+        return None, f"Run `{run_id}` not found."
     with open(meta_path) as f:
         meta = json.load(f)
     img = str(plot_path) if plot_path.exists() else None
     return img, meta.get("analysis", "No analysis available.")
 
-def delete_run(run_id):
+def delete_run(choice_str):
     """Delete a run from history."""
+    run_id = _extract_run_id(choice_str)
     if not run_id:
-        return gr.update(choices=get_history_choices()), None, "*No run selected.*"
+        return gr.update(choices=get_history_choices(), value=None), None, "*No run selected.*"
     import shutil
     run_dir = RUNS_DIR / run_id
     if run_dir.exists():
         shutil.rmtree(run_dir)
-    return gr.update(choices=get_history_choices()), None, "*Run deleted.*"
+    return gr.update(choices=get_history_choices(), value=None), None, "*Run deleted.*"
 
 model = None
 plotter = PlotBrain(mesh="fsaverage5")
@@ -599,10 +609,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
                     gr.Markdown("Type a scenario or description.")
                     text_in = gr.Textbox(label="Input Stimulus", placeholder="A dog runs across the field...", lines=3)
                     text_btn = gr.Button("Execute Brain Mapping", variant="primary", size="lg")
-                    gr.Examples(
-                        examples=[["A dog runs across the field"], ["She listened to the quiet raindrops"]],
-                        inputs=text_in
-                    )
+                    gr.Markdown("*Try: \"A dog runs across the field\" or \"She listened to the quiet raindrops\"*", elem_classes=["text-xs"])
                     
                 with gr.Tab("Audio Inference"):
                     gr.Markdown("Upload voice clips or music.")
@@ -678,6 +685,9 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
         inputs=history_dropdown,
         outputs=[history_dropdown, history_image, history_analysis]
     )
+
+    # Force-load history on page open
+    app.load(fn=refresh_history, outputs=history_dropdown)
 
 if __name__ == "__main__":
     app.launch(server_name="0.0.0.0", server_port=7860)
