@@ -1,0 +1,30 @@
+# Core TRIBE v2 dependencies
+neuralset==0.0.2
+neuraltrain==0.0.2
+torch>=2.5.1,<2.7
+numpy==2.2.6
+torchvision>=0.20,<0.22
+x_transformers==1.27.20
+einops
+pyyaml
+moviepy>=2.2.1
+huggingface_hub
+gtts
+langdetect
+spacy
+soundfile
+Levenshtein
+
+# Plotting & brain rendering
+matplotlib>=3.10
+nibabel>=5.4
+nilearn>=0.13
+scipy>=1.17
+pydantic>=2.12
+
+# UI
+gradio>=5.0
+
+# Analysis
+requests
+tqdm
