@@ -12,6 +12,15 @@ import tempfile
 import threading
 import matplotlib
 
+try:
+    import spaces
+except ImportError:
+    class SpacesPlaceholder:
+        def GPU(self, *args, **kwargs):
+            def decorator(func): return func
+            return decorator
+    spaces = SpacesPlaceholder()
+
 matplotlib.use('Agg')
 
 # --- Run History Storage ---
@@ -652,6 +661,7 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     return fig, interpretation
 
 
+@spaces.GPU(duration=180)
 def process_text(text, progress=gr.Progress()):
     if not text.strip():
         return None, ""
@@ -672,6 +682,7 @@ def process_text(text, progress=gr.Progress()):
     finally:
         os.unlink(tmp_path)
         
+@spaces.GPU(duration=180)
 def process_audio(audio_path, progress=gr.Progress()):
     if not audio_path:
         return None, ""
@@ -680,6 +691,7 @@ def process_audio(audio_path, progress=gr.Progress()):
     df = get_model().get_events_dataframe(audio_path=audio_path)
     return generate_plot_and_analysis(df, progress, stimulus_type="Audio", stimulus_desc="Audio recording")
 
+@spaces.GPU(duration=180)
 def process_video(video_path, progress=gr.Progress()):
     if not video_path:
         return None, ""

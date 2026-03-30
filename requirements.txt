@@ -9,6 +9,7 @@ einops
 pyyaml
 moviepy>=2.2.1
 huggingface_hub
+spaces
 gtts
 langdetect
 spacy
