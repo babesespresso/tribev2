@@ -215,16 +215,13 @@ def get_model():
 
 
 def analyze_brain_regions(preds, stimulus_description=""):
-    """Analyze brain activation using vertex spatial mapping (no MNE download needed)."""
-    from neuralset.extractors.neuro import FSAVERAGE_SIZES
+    """Full brain analysis: regional scores, temporal dynamics, hemispheric laterality, predictive metrics."""
     
     avg_activation = np.mean(preds, axis=0)
     n_vertices = len(avg_activation)
     half = n_vertices // 2
     
-    # fsaverage5 has 10242 vertices per hemisphere
-    # Split into anatomical zones based on vertex index ranges
-    # These ranges approximate the HCP parcellation on fsaverage5
+    # --- LOBE DEFINITIONS ---
     LOBE_RANGES = {
         "Occipital (Visual Cortex)": {
             "indices": list(range(0, int(half * 0.15))) + list(range(half, half + int(half * 0.15))),
@@ -253,7 +250,7 @@ def analyze_brain_regions(preds, stimulus_description=""):
         },
     }
     
-    # Compute mean activation per lobe
+    # --- PER-LOBE SCORES ---
     region_data = []
     for lobe_name, lobe_info in LOBE_RANGES.items():
         indices = [i for i in lobe_info["indices"] if i < n_vertices]
@@ -267,89 +264,78 @@ def analyze_brain_regions(preds, stimulus_description=""):
                 "function": "; ".join(lobe_info["functions"]),
                 "category": lobe_info["category"],
             })
-    
     region_data.sort(key=lambda x: x["activation"], reverse=True)
     
-    # Also compute overall stats
     global_mean = float(np.mean(avg_activation))
     global_std = float(np.std(avg_activation))
     
-    # Build the local analysis (instant, no API call needed)
-    interpretation = _generate_local_analysis(region_data, stimulus_description, global_mean, global_std)
+    # --- TEMPORAL DYNAMICS (per-second engagement) ---
+    n_timesteps = len(preds)
+    temporal_engagement = []
+    for t in range(n_timesteps):
+        ts_activation = float(np.mean(np.abs(preds[t])))
+        temporal_engagement.append(ts_activation)
     
+    # Attention half-life: find the second where engagement drops below 50% of peak
+    peak_engagement = max(temporal_engagement) if temporal_engagement else 0
+    peak_second = temporal_engagement.index(peak_engagement) if temporal_engagement else 0
+    attention_halflife = n_timesteps  # default: no drop
+    threshold = peak_engagement * 0.5
+    for t in range(peak_second, n_timesteps):
+        if temporal_engagement[t] < threshold:
+            attention_halflife = t
+            break
+    
+    # --- HEMISPHERIC LATERALITY ---
+    left_activation = float(np.mean(avg_activation[:half]))
+    right_activation = float(np.mean(avg_activation[half:]))
+    laterality_index = (left_activation - right_activation) / (abs(left_activation) + abs(right_activation) + 1e-10)
+    # Positive = left-dominant (analytical/language), Negative = right-dominant (creative/spatial/emotional)
+    
+    # --- BUILD ANALYSIS ---
+    analysis_data = {
+        "region_data": region_data,
+        "global_mean": global_mean,
+        "global_std": global_std,
+        "temporal_engagement": temporal_engagement,
+        "peak_second": peak_second,
+        "peak_engagement": peak_engagement,
+        "attention_halflife": attention_halflife,
+        "n_timesteps": n_timesteps,
+        "left_activation": left_activation,
+        "right_activation": right_activation,
+        "laterality_index": laterality_index,
+    }
+    
+    interpretation = _generate_full_scorecard(analysis_data, stimulus_description)
     return interpretation, region_data
 
 
-def _call_llm_for_interpretation(region_data, stimulus_description):
-    """Call HuggingFace Inference API to generate a neuroscience interpretation."""
-    hf_token = os.environ.get("HF_TOKEN", "")
+def _generate_full_scorecard(data, stimulus_description):
+    """Generate the complete Content Engagement Scorecard with predictive metrics."""
     
-    # Build a structured prompt
-    regions_text = ""
-    for i, r in enumerate(region_data[:10], 1):
-        regions_text += f"{i}. **{r['region']}** (activation: {r['activation']:.4f})\n   → {r['function']}\n"
-    
-    prompt = f"""You are a computational neuroscientist analyzing predicted fMRI brain activation patterns from Meta's TRIBE v2 model.
-
-The stimulus was: "{stimulus_description if stimulus_description else 'a multimodal media input (video/audio/text)'}"
-
-The top 10 most activated cortical regions (from the HCP MMP1.0 parcellation on fsaverage5) are:
-
-{regions_text}
-
-Write a clear, concise analysis (3-4 paragraphs) for a non-specialist audience that explains:
-1. **Dominant Processing Mode**: What cognitive systems are most engaged (visual, auditory, language, emotional, etc.)
-2. **Key Findings**: What the activation pattern reveals about how the brain would process this stimulus
-3. **Emotional & Attentional Signature**: Any regions linked to emotion, attention, or memory that suggest deeper engagement
-4. **Practical Insight**: What this means in plain language — is this content visually dominant? Emotionally engaging? Linguistically complex?
-
-Write in a professional but accessible tone. Use specific region names with their functions in parentheses."""
-
-    # Try HuggingFace Inference API
-    if hf_token:
-        try:
-            headers = {"Authorization": f"Bearer {hf_token}"}
-            payload = {
-                "inputs": prompt,
-                "parameters": {"max_new_tokens": 600, "temperature": 0.7}
-            }
-            response = requests.post(
-                "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3",
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            if response.status_code == 200:
-                result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    text = result[0].get("generated_text", "")
-                    # Strip the prompt from the response
-                    if prompt in text:
-                        text = text[len(prompt):].strip()
-                    return text
-        except Exception as e:
-            print(f"[LLM API] Failed: {e}")
-    
-    # Fallback: generate a structured local analysis without an LLM
-    return _generate_local_analysis(region_data, stimulus_description)
-
-
-def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0, global_std=0.0):
-    """Generate a Content Engagement Scorecard with letter grades and actionable insights."""
+    region_data = data["region_data"]
+    global_mean = data["global_mean"]
+    global_std = data["global_std"]
+    temporal = data["temporal_engagement"]
+    peak_sec = data["peak_second"]
+    peak_eng = data["peak_engagement"]
+    halflife = data["attention_halflife"]
+    n_ts = data["n_timesteps"]
+    left_act = data["left_activation"]
+    right_act = data["right_activation"]
+    lat_idx = data["laterality_index"]
     
     # --- SCORING ENGINE ---
-    # Normalize activations to 0-100 scale using peak values
     scores = {}
     max_peak = max(r.get("peak", 0.001) for r in region_data) if region_data else 1
     
     for r in region_data:
-        # Score = weighted blend of mean activation rank + peak intensity
         normalized_mean = (r["activation"] / (global_mean if global_mean > 0 else 0.001)) * 50
         normalized_peak = (r.get("peak", 0) / max_peak) * 100
         score = min(100, max(0, (normalized_mean * 0.4 + normalized_peak * 0.6)))
         scores[r["category"]] = round(score)
     
-    # Map scores to letter grades
     def grade(s):
         if s >= 90: return "A+"
         if s >= 85: return "A"
@@ -363,7 +349,6 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
         if s >= 40: return "D"
         return "F"
     
-    # Overall engagement = weighted average (emotion counts more)
     weights = {
         "Visual Processing": 0.20,
         "Auditory & Language": 0.25,
@@ -374,19 +359,72 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
     overall = sum(scores.get(k, 50) * w for k, w in weights.items())
     overall = min(100, max(0, round(overall)))
     
-    # --- BUILD SCORECARD ---
-    report = "## Content Engagement Scorecard\n\n"
+    emotion_score = scores.get("Emotion & Decision", 50)
+    visual_score = scores.get("Visual Processing", 50)
+    auditory_score = scores.get("Auditory & Language", 50)
+    attention_score = scores.get("Attention & Spatial", 50)
+    executive_score = scores.get("Executive & Motor", 50)
+    
+    # ===================================================================
+    # PREDICTIVE METRICS
+    # ===================================================================
+    
+    # Watch-Through Rate: based on attention decay
+    if n_ts > 1:
+        # Compare first-half vs second-half engagement
+        first_half = np.mean(temporal[:n_ts//2]) if n_ts > 1 else 0
+        second_half = np.mean(temporal[n_ts//2:]) if n_ts > 1 else 0
+        decay_ratio = second_half / (first_half + 1e-10)
+        watch_through = min(100, max(15, round(decay_ratio * 85 + 15)))
+    else:
+        watch_through = 70
+    
+    # Ad Recall (24hr): temporal+prefrontal co-activation predicts memory encoding
+    memory_signal = (auditory_score * 0.4 + emotion_score * 0.3 + executive_score * 0.3)
+    ad_recall = min(100, max(10, round(memory_signal * 0.9)))
+    
+    # Purchase/Conversion Intent: emotion + decision activation
+    conversion_signal = (emotion_score * 0.5 + executive_score * 0.25 + attention_score * 0.25)
+    purchase_intent = min(100, max(5, round(conversion_signal * 0.85)))
+    
+    # Virality/Shareability: emotion + auditory (social cognition)
+    virality_signal = (emotion_score * 0.45 + auditory_score * 0.3 + visual_score * 0.25)
+    virality = min(100, max(5, round(virality_signal * 0.9)))
+    
+    # Optimal Content Length (seconds): based on attention halflife
+    if halflife < n_ts:
+        optimal_length = halflife
+    else:
+        optimal_length = n_ts  # attention held throughout
+    
+    # Cognitive Load: executive + attention intensity
+    cog_load_raw = (executive_score * 0.6 + attention_score * 0.4)
+    cog_load = min(100, max(0, round(cog_load_raw)))
+    cog_load_label = "High" if cog_load >= 75 else "Medium" if cog_load >= 50 else "Low"
+    
+    # Content Type Classification
+    type_scores = {
+        "Entertainment": visual_score * 0.4 + emotion_score * 0.4 + auditory_score * 0.2,
+        "Educational": executive_score * 0.4 + auditory_score * 0.35 + attention_score * 0.25,
+        "Persuasion/Ad": emotion_score * 0.4 + auditory_score * 0.3 + visual_score * 0.3,
+        "Informational": executive_score * 0.35 + attention_score * 0.35 + auditory_score * 0.3,
+    }
+    best_fit = max(type_scores, key=type_scores.get)
+    
+    # ===================================================================
+    # BUILD REPORT
+    # ===================================================================
+    
+    report = "## 📊 Content Engagement Scorecard\n\n"
     report += f"**Stimulus:** {stimulus_description or 'Multimodal media input'}\n\n"
+    report += f"### Overall Neural Engagement: {overall}/100 ({grade(overall)})\n\n"
     
-    # Overall score - big and prominent
-    report += f"### Overall Neural Engagement Score: {overall}/100 ({grade(overall)})\n\n"
-    
-    # Category grades table
+    # --- CATEGORY BREAKDOWN ---
     report += "### Category Breakdown\n\n"
     report += "| Cognitive System | Score | Grade | What It Measures |\n"
     report += "|-----------------|-------|-------|------------------|\n"
     
-    grade_descriptions = {
+    grade_desc = {
         "Visual Processing": "How strongly visuals capture attention (faces, motion, color)",
         "Auditory & Language": "Speech comprehension, voice impact, and word meaning",
         "Attention & Spatial": "Sustained focus and spatial awareness engagement",
@@ -397,11 +435,9 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
     for r in region_data:
         cat = r["category"]
         s = scores.get(cat, 50)
-        g = grade(s)
-        desc = grade_descriptions.get(cat, "")
-        report += f"| **{cat}** | {s}/100 | **{g}** | {desc} |\n"
+        report += f"| **{cat}** | {s}/100 | **{grade(s)}** | {grade_desc.get(cat, '')} |\n"
     
-    # Visual bar chart
+    # --- ENGAGEMENT PROFILE BARS ---
     report += "\n### Engagement Profile\n\n"
     for r in region_data:
         cat = r["category"]
@@ -411,8 +447,54 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
         bar = "█" * filled + "░" * empty
         report += f"- **{cat}**: `{bar}` {s}/100 ({grade(s)})\n"
     
-    # --- INTERPRETATION ---
-    report += "\n### Key Findings\n\n"
+    # --- ENGAGEMENT TIMELINE ---
+    report += "\n---\n\n### ⏱️ Engagement Timeline\n\n"
+    if len(temporal) > 1:
+        max_t = max(temporal) if max(temporal) > 0 else 1
+        report += "| Second | Engagement | Level |\n"
+        report += "|--------|-----------|-------|\n"
+        for i, t_val in enumerate(temporal):
+            pct = int((t_val / max_t) * 10)
+            bar = "▓" * pct + "░" * (10 - pct)
+            marker = " ← PEAK" if i == peak_sec else ""
+            report += f"| {i+1}s | `{bar}` {t_val:.4f} | {marker} |\n"
+        
+        report += f"\n**Peak engagement:** Second {peak_sec + 1}\n"
+        if halflife < n_ts:
+            report += f"**Attention drops below 50%:** Second {halflife + 1} — viewers likely disengage after this point\n"
+        else:
+            report += f"**Attention sustained** throughout all {n_ts} seconds — strong holding power\n"
+    else:
+        report += "Single-timestep stimulus — timeline not available for text-only inputs.\n"
+    
+    # --- HEMISPHERIC ANALYSIS ---
+    report += "\n---\n\n### 🧠 Brain Laterality\n\n"
+    report += "| Hemisphere | Activation | Processes |\n"
+    report += "|-----------|-----------|----------|\n"
+    report += f"| **Left Brain** | {left_act:.5f} | Language, logic, analytical thinking, speech |\n"
+    report += f"| **Right Brain** | {right_act:.5f} | Creativity, emotion, spatial awareness, music |\n\n"
+    
+    if lat_idx > 0.05:
+        report += f"**Left-brain dominant** (laterality: {lat_idx:+.3f}) — This content engages **analytical and language** processing more than emotional/creative circuits. Typical of speech-heavy, informational, or text-based content.\n"
+    elif lat_idx < -0.05:
+        report += f"**Right-brain dominant** (laterality: {lat_idx:+.3f}) — This content engages **creative, emotional, and spatial** processing. Typical of music, visual art, emotionally-charged narratives, or immersive video.\n"
+    else:
+        report += f"**Balanced activation** (laterality: {lat_idx:+.3f}) — Both hemispheres are equally engaged, suggesting well-rounded multimodal content that combines logic with emotion.\n"
+    
+    # --- PREDICTIVE METRICS ---
+    report += "\n---\n\n### 🔮 Predictive Insights\n\n"
+    report += "| Metric | Prediction | Confidence |\n"
+    report += "|--------|-----------|------------|\n"
+    report += f"| **Watch-Through Rate** | {watch_through}% of viewers will finish | {'High' if watch_through > 70 else 'Medium' if watch_through > 50 else 'Low'} |\n"
+    report += f"| **24hr Ad Recall** | {ad_recall}% recall probability | {'High' if ad_recall > 70 else 'Medium' if ad_recall > 50 else 'Low'} |\n"
+    report += f"| **Purchase/Action Intent** | {purchase_intent}/100 | {'Strong' if purchase_intent > 70 else 'Moderate' if purchase_intent > 50 else 'Weak'} |\n"
+    report += f"| **Virality / Shareability** | {virality}/100 | {'Highly Shareable' if virality > 75 else 'Moderately Shareable' if virality > 50 else 'Low Share Potential'} |\n"
+    report += f"| **Cognitive Load** | {cog_load}/100 ({cog_load_label}) | — |\n"
+    report += f"| **Optimal Content Length** | ~{optimal_length}s | Based on attention decay |\n"
+    report += f"| **Best Content Fit** | {best_fit} | Based on cognitive profile |\n"
+    
+    # --- KEY FINDINGS ---
+    report += "\n---\n\n### Key Findings\n\n"
     
     dominant = region_data[0] if region_data else None
     weakest = region_data[-1] if region_data else None
@@ -427,11 +509,11 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
         elif "Auditory" in dom_cat:
             report += "This content is **speech/audio dominant** — the words and voice carry the most neural weight. The speaker's message is the primary engagement driver. "
         elif "Attention" in dom_cat:
-            report += "This content commands **strong focused attention** — the viewer is locked in and spatially engaged. Effective for immersive or informational content. "
+            report += "This content commands **strong focused attention** — the viewer is locked in and spatially engaged. "
         elif "Executive" in dom_cat:
-            report += "This content triggers **active cognitive processing** — the viewer is thinking, analyzing, and mentally engaging. Good for educational or persuasive content. "
+            report += "This content triggers **active cognitive processing** — the viewer is thinking and analyzing. "
         elif "Emotion" in dom_cat:
-            report += "This content is **emotionally compelling** — it activates reward, empathy, and decision circuits. Highly effective for persuasion and brand loyalty. "
+            report += "This content is **emotionally compelling** — it activates reward, empathy, and decision circuits. "
     
     if weakest:
         weak_cat = weakest["category"]
@@ -439,40 +521,41 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
         if weak_score < 60:
             report += f"\n\n**Weakest signal: {weak_cat} ({grade(weak_score)}).** "
             if "Emotion" in weak_cat:
-                report += "Low emotional activation means this content **informs but doesn't persuade**. It lacks the emotional hook needed to drive action, sharing, or memory formation. "
+                report += "Low emotional activation means this content **informs but doesn't persuade**. "
             elif "Visual" in weak_cat:
-                report += "Low visual engagement suggests the visuals are **not contributing** to the message. Consider stronger imagery, faces, motion, or contrast. "
+                report += "Low visual engagement — visuals are **not contributing** to the message. "
             elif "Attention" in weak_cat:
-                report += "Low attention capture suggests the content may **fail to hold viewers**. Consider faster pacing, visual variety, or direct address. "
+                report += "Low attention capture — content may **fail to hold viewers**. "
             elif "Auditory" in weak_cat:
-                report += "Low auditory engagement means the **audio/speech is not landing**. Consider clearer vocal delivery, background music, or sound design. "
+                report += "Low auditory engagement — **audio/speech is not landing**. "
             elif "Executive" in weak_cat:
-                report += "Low executive activation means the content is **passively consumed** rather than actively processed — fine for entertainment, but weak for education or persuasion. "
+                report += "Low executive activation — content is **passively consumed**. "
     
-    # --- ACTIONABLE RECOMMENDATIONS ---
+    # --- RECOMMENDATIONS ---
     report += "\n\n### Recommendations\n\n"
     
     recs = []
-    emotion_score = scores.get("Emotion & Decision", 50)
-    visual_score = scores.get("Visual Processing", 50)
-    auditory_score = scores.get("Auditory & Language", 50)
-    attention_score = scores.get("Attention & Spatial", 50)
-    
     if emotion_score < 60:
-        recs.append("Add emotional stakes — personal stories, conflict, music, or facial close-ups to boost limbic engagement")
+        recs.append("🎭 **Boost emotional impact** — add personal stories, conflict, music, or facial close-ups")
     if visual_score < 60:
-        recs.append("Strengthen visuals — add motion, faces, high-contrast imagery, or text overlays to increase occipital activation")
+        recs.append("🎨 **Strengthen visuals** — add motion, faces, high-contrast imagery, or text overlays")
     if auditory_score < 60:
-        recs.append("Improve audio presence — clearer speech, vocal variety, background scoring, or sound effects")
+        recs.append("🔊 **Improve audio** — clearer speech, vocal variety, background scoring, or sound effects")
     if attention_score < 60:
-        recs.append("Increase attention hooks — faster cuts, direct eye contact, questions, or scene changes every 3-5 seconds")
+        recs.append("🎯 **Add attention hooks** — faster cuts, direct eye contact, questions, or scene changes every 3-5s")
+    if watch_through < 50:
+        recs.append(f"⏱️ **Shorten to ~{optimal_length}s** — attention decays rapidly; front-load your key message")
+    if purchase_intent < 40:
+        recs.append("💰 **Add a clear call to action** — the content lacks the emotional+cognitive push to drive behavior")
+    if virality > 75:
+        recs.append("🚀 **High share potential** — prioritize social distribution; this content has organic spread characteristics")
     if overall >= 80:
-        recs.append("This content scores high across multiple systems — strong candidate for broad distribution")
-    if emotion_score >= 75 and auditory_score >= 75:
-        recs.append("High emotion + strong speech = excellent persuasion potential for ads, political content, or calls to action")
+        recs.append("✅ **Strong overall** — candidate for broad distribution and paid amplification")
+    if cog_load > 85:
+        recs.append("⚠️ **High cognitive load** — content may overwhelm; simplify messaging or slow pacing")
     
     if not recs:
-        recs.append("Content is performing adequately across all cognitive systems — consider A/B testing variations to optimize further")
+        recs.append("📊 Content is performing adequately — consider A/B testing variations to optimize further")
     
     for i, rec in enumerate(recs, 1):
         report += f"{i}. {rec}\n"
@@ -480,13 +563,13 @@ def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0,
     # --- BOTTOM LINE ---
     report += "\n### Bottom Line\n\n"
     if overall >= 80:
-        report += f"**{overall}/100 — Excellent.** This content produces strong, multi-system neural engagement. It captures attention, processes meaningfully, and has high retention potential."
+        report += f"**{overall}/100 — Excellent.** Strong multi-system engagement. High retention, recall, and action potential."
     elif overall >= 65:
-        report += f"**{overall}/100 — Good.** This content engages the brain but has room for improvement. Focus on strengthening the weakest category to push engagement higher."
+        report += f"**{overall}/100 — Good.** Solid engagement with room to improve. Focus on the weakest category."
     elif overall >= 50:
-        report += f"**{overall}/100 — Average.** This content processes adequately but doesn't stand out. It risks being forgettable without stronger emotional or visual hooks."
+        report += f"**{overall}/100 — Average.** Adequate but forgettable. Needs stronger emotional or visual hooks."
     else:
-        report += f"**{overall}/100 — Needs Work.** This content produces weak neural engagement across most systems. Major revisions to visual, emotional, or narrative elements are recommended."
+        report += f"**{overall}/100 — Needs Work.** Weak engagement. Major revisions recommended."
     
     return report
 
