@@ -1,0 +1,44 @@
+{
+  "id": "20260329_232104",
+  "timestamp": "2026-03-29T23:21:08.466058",
+  "stimulus_type": "Video",
+  "stimulus": "Video clip (first 5 seconds)",
+  "analysis": "## Content Engagement Scorecard\n\n**Stimulus:** Video clip (first 5 seconds)\n\n### Overall Neural Engagement Score: 78/100 (B+)\n\n### Category Breakdown\n\n| Cognitive System | Score | Grade | What It Measures |\n|-----------------|-------|-------|------------------|\n| **Auditory & Language** | 86/100 | **A** | Speech comprehension, voice impact, and word meaning |\n| **Visual Processing** | 80/100 | **A-** | How strongly visuals capture attention (faces, motion, color) |\n| **Executive & Motor** | 78/100 | **B+** | Active thinking, problem-solving, and action impulse |\n| **Attention & Spatial** | 72/100 | **B** | Sustained focus and spatial awareness engagement |\n| **Emotion & Decision** | 70/100 | **B** | Emotional resonance, trust, reward, and persuasion |\n\n### Engagement Profile\n\n- **Auditory & Language**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591` 86/100 (A)\n- **Visual Processing**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591` 80/100 (A-)\n- **Executive & Motor**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591` 78/100 (B+)\n- **Attention & Spatial**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591` 72/100 (B)\n- **Emotion & Decision**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591` 70/100 (B)\n\n### Key Findings\n\n**Strongest signal: Auditory & Language (A).** This content is **speech/audio dominant** \u2014 the words and voice carry the most neural weight. The speaker's message is the primary engagement driver. \n\n### Recommendations\n\n1. Content is performing adequately across all cognitive systems \u2014 consider A/B testing variations to optimize further\n\n### Bottom Line\n\n**78/100 \u2014 Good.** This content engages the brain but has room for improvement. Focus on strengthening the weakest category to push engagement higher.",
+  "top_regions": [
+    {
+      "region": "Temporal (Auditory/Language)",
+      "activation": 0.009112298488616943,
+      "peak": 0.7254968285560608,
+      "function": "Speech comprehension (Wernicke's area); Auditory processing (A1); Voice and social perception (STS)",
+      "category": "Auditory & Language"
+    },
+    {
+      "region": "Occipital (Visual Cortex)",
+      "activation": 0.008261997252702713,
+      "peak": 0.681649386882782,
+      "function": "Primary visual processing (V1/V2); Color and motion detection (V4/MT); Object and face recognition (FFC)",
+      "category": "Visual Processing"
+    },
+    {
+      "region": "Frontal (Executive/Motor)",
+      "activation": 0.006766342557966709,
+      "peak": 0.7068056464195251,
+      "function": "Working memory and planning (DLPFC); Motor execution and sequencing; Speech production (Broca's area)",
+      "category": "Executive & Motor"
+    },
+    {
+      "region": "Parietal (Spatial/Attention)",
+      "activation": 0.006293953396379948,
+      "peak": 0.6571677327156067,
+      "function": "Spatial attention (IPS); Sensorimotor integration; Body awareness and proprioception",
+      "category": "Attention & Spatial"
+    },
+    {
+      "region": "Prefrontal (Decision/Emotion)",
+      "activation": 0.005383634474128485,
+      "peak": 0.6573675870895386,
+      "function": "Decision-making and reward (OFC); Emotion regulation (vmPFC); Abstract reasoning and metacognition",
+      "category": "Emotion & Decision"
+    }
+  ]
+}

@@ -622,7 +622,9 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
                     video_btn = gr.Button("Execute Brain Mapping", variant="primary", size="lg")
                     
         with gr.Column(scale=5):
-            gr.Markdown("### Predicted Cortical Activation")
+            with gr.Row():
+                gr.Markdown("### Predicted Cortical Activation")
+                new_run_btn = gr.Button("New +", variant="secondary", size="sm", scale=0, min_width=80)
             out_plot = gr.Plot(label="", show_label=False)
 
     gr.Markdown("---")
@@ -658,6 +660,21 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     # Helper to refresh dropdown after a run completes
     def refresh_history():
         return gr.update(choices=get_history_choices())
+
+    # New+ button — clears everything for a fresh run
+    def reset_for_new_run():
+        return (
+            "",           # text_in
+            None,         # audio_in
+            None,         # video_in
+            None,         # out_plot
+            "*Run a brain mapping to see an engagement scorecard with grades, scores, and actionable recommendations.*",  # out_analysis
+        )
+
+    new_run_btn.click(
+        fn=reset_for_new_run,
+        outputs=[text_in, audio_in, video_in, out_plot, out_analysis]
+    )
 
     # Wire up brain mapping — chain dropdown refresh after completion
     text_btn.click(fn=process_text, inputs=text_in, outputs=[out_plot, out_analysis]).then(
