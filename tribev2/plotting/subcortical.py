@@ -20,7 +20,10 @@ import seaborn as sns
 from nilearn import datasets
 from nilearn.surface import vol_to_surf
 from scipy.ndimage import gaussian_filter
-from skimage import measure
+try:
+    from skimage import measure
+except ImportError:
+    measure = None
 
 from tribev2.plotting.utils import (
     get_cmap,
