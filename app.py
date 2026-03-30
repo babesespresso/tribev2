@@ -325,70 +325,158 @@ Write in a professional but accessible tone. Use specific region names with thei
 
 
 def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0, global_std=0.0):
-    """Generate a structured analysis locally using lobe-level activation data."""
-    report = f"## Neuro-Cognitive Analysis\n\n"
+    """Generate a Content Engagement Scorecard with letter grades and actionable insights."""
+    
+    # --- SCORING ENGINE ---
+    # Normalize activations to 0-100 scale using peak values
+    scores = {}
+    max_peak = max(r.get("peak", 0.001) for r in region_data) if region_data else 1
+    
+    for r in region_data:
+        # Score = weighted blend of mean activation rank + peak intensity
+        normalized_mean = (r["activation"] / (global_mean if global_mean > 0 else 0.001)) * 50
+        normalized_peak = (r.get("peak", 0) / max_peak) * 100
+        score = min(100, max(0, (normalized_mean * 0.4 + normalized_peak * 0.6)))
+        scores[r["category"]] = round(score)
+    
+    # Map scores to letter grades
+    def grade(s):
+        if s >= 90: return "A+"
+        if s >= 85: return "A"
+        if s >= 80: return "A-"
+        if s >= 75: return "B+"
+        if s >= 70: return "B"
+        if s >= 65: return "B-"
+        if s >= 60: return "C+"
+        if s >= 55: return "C"
+        if s >= 50: return "C-"
+        if s >= 40: return "D"
+        return "F"
+    
+    # Overall engagement = weighted average (emotion counts more)
+    weights = {
+        "Visual Processing": 0.20,
+        "Auditory & Language": 0.25,
+        "Attention & Spatial": 0.20,
+        "Executive & Motor": 0.15,
+        "Emotion & Decision": 0.20,
+    }
+    overall = sum(scores.get(k, 50) * w for k, w in weights.items())
+    overall = min(100, max(0, round(overall)))
+    
+    # --- BUILD SCORECARD ---
+    report = "## Content Engagement Scorecard\n\n"
     report += f"**Stimulus:** {stimulus_description or 'Multimodal media input'}\n\n"
     
-    # Activation table
-    report += "### Cortical Activation by Brain Region\n\n"
-    report += "| Rank | Brain Region | Mean Activation | Peak Activation | Key Functions |\n"
-    report += "|------|-------------|----------------|----------------|---------------|\n"
+    # Overall score - big and prominent
+    report += f"### Overall Neural Engagement Score: {overall}/100 ({grade(overall)})\n\n"
     
-    for i, r in enumerate(region_data, 1):
-        report += f"| {i} | **{r['region']}** | {r['activation']:.4f} | {r.get('peak', 0):.4f} | {r['function']} |\n"
+    # Category grades table
+    report += "### Category Breakdown\n\n"
+    report += "| Cognitive System | Score | Grade | What It Measures |\n"
+    report += "|-----------------|-------|-------|------------------|\n"
     
-    # Overall stats
-    report += f"\n**Global Mean Activation:** {global_mean:.4f} | **Standard Deviation:** {global_std:.4f}\n\n"
-    
-    # Dominant processing mode
-    report += "### Processing Profile\n\n"
-    
-    dominant = region_data[0] if region_data else None
-    if dominant:
-        report += f"The **dominant processing mode** is **{dominant['category']}** "
-        report += f"(region: {dominant['region']}, activation: {dominant['activation']:.4f}).\n\n"
-    
-    # Relative activation chart using text bars
-    if region_data:
-        max_act = max(r["activation"] for r in region_data)
-        min_act = min(r["activation"] for r in region_data)
-        spread = max_act - min_act if max_act != min_act else 1
-        for r in region_data:
-            pct = int(((r["activation"] - min_act) / spread) * 20)
-            bar = "█" * max(pct, 1) + "░" * (20 - max(pct, 1))
-            report += f"- {r['category']}: `{bar}` {r['activation']:.4f}\n"
-    
-    # Interpretation
-    report += "\n### Interpretation\n\n"
+    grade_descriptions = {
+        "Visual Processing": "How strongly visuals capture attention (faces, motion, color)",
+        "Auditory & Language": "Speech comprehension, voice impact, and word meaning",
+        "Attention & Spatial": "Sustained focus and spatial awareness engagement",
+        "Executive & Motor": "Active thinking, problem-solving, and action impulse",
+        "Emotion & Decision": "Emotional resonance, trust, reward, and persuasion",
+    }
     
     for r in region_data:
         cat = r["category"]
-        act = r["activation"]
-        
-        if "Visual" in cat and act > global_mean:
-            report += "This stimulus triggers **strong visual processing**, engaging the occipital cortex for feature extraction — from basic edge detection (V1/V2) through complex object and face recognition. "
-        
-        if "Auditory" in cat and act > global_mean:
-            report += "Significant **auditory and language network engagement** indicates the brain is actively processing speech comprehension, vocal tone analysis, and semantic meaning extraction. "
-        
-        if "Attention" in cat and act > global_mean:
-            report += "The **parietal attention system** is activated, indicating the brain is directing sustained spatial attention and integrating multisensory information. "
-        
-        if "Executive" in cat and act > global_mean:
-            report += "**Frontal executive regions** show activation, suggesting working memory engagement, motor planning, and potentially speech production (Broca's area). "
-        
-        if "Emotion" in cat and act > global_mean:
-            report += "**Prefrontal and orbitofrontal activation** suggests this content triggers emotional evaluation, reward assessment, and higher-order decision-making. "
+        s = scores.get(cat, 50)
+        g = grade(s)
+        desc = grade_descriptions.get(cat, "")
+        report += f"| **{cat}** | {s}/100 | **{g}** | {desc} |\n"
     
-    # Summary
-    report += "\n\n### Summary\n\n"
-    above_mean = [r for r in region_data if r["activation"] > global_mean]
-    if len(above_mean) >= 4:
-        report += "This stimulus produces **broadly distributed cortical activation**, engaging multiple cognitive systems simultaneously — characteristic of rich, multimodal content that demands visual, auditory, and cognitive processing in parallel."
-    elif len(above_mean) >= 2:
-        report += "This stimulus produces **focused cortical activation** concentrated in specific cognitive systems, suggesting targeted neural engagement rather than broad processing."
+    # Visual bar chart
+    report += "\n### Engagement Profile\n\n"
+    for r in region_data:
+        cat = r["category"]
+        s = scores.get(cat, 50)
+        filled = s // 5
+        empty = 20 - filled
+        bar = "█" * filled + "░" * empty
+        report += f"- **{cat}**: `{bar}` {s}/100 ({grade(s)})\n"
+    
+    # --- INTERPRETATION ---
+    report += "\n### Key Findings\n\n"
+    
+    dominant = region_data[0] if region_data else None
+    weakest = region_data[-1] if region_data else None
+    
+    if dominant:
+        dom_cat = dominant["category"]
+        dom_score = scores.get(dom_cat, 50)
+        report += f"**Strongest signal: {dom_cat} ({grade(dom_score)}).** "
+        
+        if "Visual" in dom_cat:
+            report += "This content is **visually dominant** — the brain prioritizes processing what it sees. Strong for ads, thumbnails, and visual storytelling. "
+        elif "Auditory" in dom_cat:
+            report += "This content is **speech/audio dominant** — the words and voice carry the most neural weight. The speaker's message is the primary engagement driver. "
+        elif "Attention" in dom_cat:
+            report += "This content commands **strong focused attention** — the viewer is locked in and spatially engaged. Effective for immersive or informational content. "
+        elif "Executive" in dom_cat:
+            report += "This content triggers **active cognitive processing** — the viewer is thinking, analyzing, and mentally engaging. Good for educational or persuasive content. "
+        elif "Emotion" in dom_cat:
+            report += "This content is **emotionally compelling** — it activates reward, empathy, and decision circuits. Highly effective for persuasion and brand loyalty. "
+    
+    if weakest:
+        weak_cat = weakest["category"]
+        weak_score = scores.get(weak_cat, 50)
+        if weak_score < 60:
+            report += f"\n\n**Weakest signal: {weak_cat} ({grade(weak_score)}).** "
+            if "Emotion" in weak_cat:
+                report += "Low emotional activation means this content **informs but doesn't persuade**. It lacks the emotional hook needed to drive action, sharing, or memory formation. "
+            elif "Visual" in weak_cat:
+                report += "Low visual engagement suggests the visuals are **not contributing** to the message. Consider stronger imagery, faces, motion, or contrast. "
+            elif "Attention" in weak_cat:
+                report += "Low attention capture suggests the content may **fail to hold viewers**. Consider faster pacing, visual variety, or direct address. "
+            elif "Auditory" in weak_cat:
+                report += "Low auditory engagement means the **audio/speech is not landing**. Consider clearer vocal delivery, background music, or sound design. "
+            elif "Executive" in weak_cat:
+                report += "Low executive activation means the content is **passively consumed** rather than actively processed — fine for entertainment, but weak for education or persuasion. "
+    
+    # --- ACTIONABLE RECOMMENDATIONS ---
+    report += "\n\n### Recommendations\n\n"
+    
+    recs = []
+    emotion_score = scores.get("Emotion & Decision", 50)
+    visual_score = scores.get("Visual Processing", 50)
+    auditory_score = scores.get("Auditory & Language", 50)
+    attention_score = scores.get("Attention & Spatial", 50)
+    
+    if emotion_score < 60:
+        recs.append("Add emotional stakes — personal stories, conflict, music, or facial close-ups to boost limbic engagement")
+    if visual_score < 60:
+        recs.append("Strengthen visuals — add motion, faces, high-contrast imagery, or text overlays to increase occipital activation")
+    if auditory_score < 60:
+        recs.append("Improve audio presence — clearer speech, vocal variety, background scoring, or sound effects")
+    if attention_score < 60:
+        recs.append("Increase attention hooks — faster cuts, direct eye contact, questions, or scene changes every 3-5 seconds")
+    if overall >= 80:
+        recs.append("This content scores high across multiple systems — strong candidate for broad distribution")
+    if emotion_score >= 75 and auditory_score >= 75:
+        recs.append("High emotion + strong speech = excellent persuasion potential for ads, political content, or calls to action")
+    
+    if not recs:
+        recs.append("Content is performing adequately across all cognitive systems — consider A/B testing variations to optimize further")
+    
+    for i, rec in enumerate(recs, 1):
+        report += f"{i}. {rec}\n"
+    
+    # --- BOTTOM LINE ---
+    report += "\n### Bottom Line\n\n"
+    if overall >= 80:
+        report += f"**{overall}/100 — Excellent.** This content produces strong, multi-system neural engagement. It captures attention, processes meaningfully, and has high retention potential."
+    elif overall >= 65:
+        report += f"**{overall}/100 — Good.** This content engages the brain but has room for improvement. Focus on strengthening the weakest category to push engagement higher."
+    elif overall >= 50:
+        report += f"**{overall}/100 — Average.** This content processes adequately but doesn't stand out. It risks being forgettable without stronger emotional or visual hooks."
     else:
-        report += "This stimulus produces **localized cortical activation** in a narrow set of brain regions, suggesting a simple, modality-specific processing response."
+        report += f"**{overall}/100 — Needs Work.** This content produces weak neural engagement across most systems. Major revisions to visual, emotional, or narrative elements are recommended."
     
     return report
 
@@ -531,13 +619,8 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
             out_plot = gr.Plot(label="", show_label=False)
 
     gr.Markdown("---")
-    gr.Markdown("### AI Neuro-Cognitive Analysis")
-    out_analysis = gr.Markdown(value="*Run a brain mapping to see the AI interpretation of cortical activation patterns.*")
-
-    # Wire up the events — now outputs both plot AND analysis
-    text_btn.click(fn=process_text, inputs=text_in, outputs=[out_plot, out_analysis])
-    audio_btn.click(fn=process_audio, inputs=audio_in, outputs=[out_plot, out_analysis])
-    video_btn.click(fn=process_video, inputs=video_in, outputs=[out_plot, out_analysis])
+    gr.Markdown("### Content Engagement Scorecard")
+    out_analysis = gr.Markdown(value="*Run a brain mapping to see an engagement scorecard with grades, scores, and actionable recommendations.*")
 
     # --- Run History Section ---
     gr.HTML("""
@@ -565,6 +648,21 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     history_image = gr.Image(label="Brain Map", show_label=False, type="filepath")
     history_analysis = gr.Markdown(value="*Select a run from the dropdown above.*")
 
+    # Helper to refresh dropdown after a run completes
+    def refresh_history():
+        return gr.update(choices=get_history_choices())
+
+    # Wire up brain mapping — chain dropdown refresh after completion
+    text_btn.click(fn=process_text, inputs=text_in, outputs=[out_plot, out_analysis]).then(
+        fn=refresh_history, outputs=history_dropdown
+    )
+    audio_btn.click(fn=process_audio, inputs=audio_in, outputs=[out_plot, out_analysis]).then(
+        fn=refresh_history, outputs=history_dropdown
+    )
+    video_btn.click(fn=process_video, inputs=video_in, outputs=[out_plot, out_analysis]).then(
+        fn=refresh_history, outputs=history_dropdown
+    )
+
     # History event handlers
     history_dropdown.change(
         fn=view_run,
@@ -572,7 +670,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
         outputs=[history_image, history_analysis]
     )
     refresh_btn.click(
-        fn=lambda: gr.update(choices=get_history_choices()),
+        fn=refresh_history,
         outputs=history_dropdown
     )
     delete_btn.click(

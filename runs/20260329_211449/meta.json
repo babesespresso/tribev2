@@ -1,0 +1,44 @@
+{
+  "id": "20260329_211449",
+  "timestamp": "2026-03-29T21:14:53.512623",
+  "stimulus_type": "Video",
+  "stimulus": "Video clip (first 5 seconds)",
+  "analysis": "## Neuro-Cognitive Analysis\n\n**Stimulus:** Video clip (first 5 seconds)\n\n### Cortical Activation by Brain Region\n\n| Rank | Brain Region | Mean Activation | Peak Activation | Key Functions |\n|------|-------------|----------------|----------------|---------------|\n| 1 | **Temporal (Auditory/Language)** | 0.0091 | 0.7255 | Speech comprehension (Wernicke's area); Auditory processing (A1); Voice and social perception (STS) |\n| 2 | **Occipital (Visual Cortex)** | 0.0083 | 0.6816 | Primary visual processing (V1/V2); Color and motion detection (V4/MT); Object and face recognition (FFC) |\n| 3 | **Frontal (Executive/Motor)** | 0.0068 | 0.7068 | Working memory and planning (DLPFC); Motor execution and sequencing; Speech production (Broca's area) |\n| 4 | **Parietal (Spatial/Attention)** | 0.0063 | 0.6572 | Spatial attention (IPS); Sensorimotor integration; Body awareness and proprioception |\n| 5 | **Prefrontal (Decision/Emotion)** | 0.0054 | 0.6574 | Decision-making and reward (OFC); Emotion regulation (vmPFC); Abstract reasoning and metacognition |\n\n**Global Mean Activation:** 0.0071 | **Standard Deviation:** 0.1330\n\n### Processing Profile\n\nThe **dominant processing mode** is **Auditory & Language** (region: Temporal (Auditory/Language), activation: 0.0091).\n\n- Auditory & Language: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588` 0.0091\n- Visual Processing: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591` 0.0083\n- Executive & Motor: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591` 0.0068\n- Attention & Spatial: `\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591` 0.0063\n- Emotion & Decision: `\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591` 0.0054\n\n### Interpretation\n\nSignificant **auditory and language network engagement** indicates the brain is actively processing speech comprehension, vocal tone analysis, and semantic meaning extraction. This stimulus triggers **strong visual processing**, engaging the occipital cortex for feature extraction \u2014 from basic edge detection (V1/V2) through complex object and face recognition. \n\n### Summary\n\nThis stimulus produces **focused cortical activation** concentrated in specific cognitive systems, suggesting targeted neural engagement rather than broad processing.",
+  "top_regions": [
+    {
+      "region": "Temporal (Auditory/Language)",
+      "activation": 0.009112298488616943,
+      "peak": 0.7254968285560608,
+      "function": "Speech comprehension (Wernicke's area); Auditory processing (A1); Voice and social perception (STS)",
+      "category": "Auditory & Language"
+    },
+    {
+      "region": "Occipital (Visual Cortex)",
+      "activation": 0.008261997252702713,
+      "peak": 0.681649386882782,
+      "function": "Primary visual processing (V1/V2); Color and motion detection (V4/MT); Object and face recognition (FFC)",
+      "category": "Visual Processing"
+    },
+    {
+      "region": "Frontal (Executive/Motor)",
+      "activation": 0.006766342557966709,
+      "peak": 0.7068056464195251,
+      "function": "Working memory and planning (DLPFC); Motor execution and sequencing; Speech production (Broca's area)",
+      "category": "Executive & Motor"
+    },
+    {
+      "region": "Parietal (Spatial/Attention)",
+      "activation": 0.006293953396379948,
+      "peak": 0.6571677327156067,
+      "function": "Spatial attention (IPS); Sensorimotor integration; Body awareness and proprioception",
+      "category": "Attention & Spatial"
+    },
+    {
+      "region": "Prefrontal (Decision/Emotion)",
+      "activation": 0.005383634474128485,
+      "peak": 0.6573675870895386,
+      "function": "Decision-making and reward (OFC); Emotion regulation (vmPFC); Abstract reasoning and metacognition",
+      "category": "Emotion & Decision"
+    }
+  ]
+}
