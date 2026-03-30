@@ -12,7 +12,10 @@ from functools import lru_cache
 import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
-import pyvista as pv
+try:
+    import pyvista as pv
+except ImportError:
+    pv = None
 import seaborn as sns
 from nilearn import datasets
 from nilearn.surface import vol_to_surf
