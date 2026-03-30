@@ -141,7 +141,7 @@ class ExtractWordsFromAudio(EventsTransform):
                 "json",
             ]
             cmd = [c for c in cmd if c]  # remove empty args
-            env = {k: v for k, v in os.environ.items() if k != "MPLBACKEND"}
+            env = {k: v for k, v in os.environ.items() if k not in ("MPLBACKEND", "HF_HUB_ENABLE_HF_TRANSFER")}
             result = subprocess.run(cmd, capture_output=True, text=True, env=env)
             if result.returncode != 0:
                 raise RuntimeError(f"whisperx failed:\n{result.stderr}")
