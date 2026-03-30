@@ -742,7 +742,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
             MULTITUDE MEDIA
         </h3>
         <h1 style="font-size: 2.75rem; font-weight: 300; letter-spacing: -0.03em; margin-bottom: 0.75rem; color: #ffffff;">
-            TRIBE v2 Brain Encoding
+            TRIBE v2 Brain Encoding (Live)
         </h1>
         <p style="font-size: 1.05rem; color: #71717a; max-width: 700px; line-height: 1.5;">
             Upload text, audio, or video to predict human fMRI brain activity. The AI will map cortical activation patterns and provide a detailed cognitive analysis.
