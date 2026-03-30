@@ -6,7 +6,12 @@
 
 from .base import BasePlotBrain
 from .cortical import PlotBrainNilearn
-from .cortical_pv import PlotBrainPyvista
+try:
+    from .cortical_pv import PlotBrainPyvista
+    PlotBrain = PlotBrainPyvista
+except ImportError:
+    pass
+
 from .subcortical import get_subcortical_roi_indices, plot_subcortical
 from .utils import (
     combine_mosaics,
@@ -22,5 +27,3 @@ from .utils import (
     set_title,
     shrink_ax,
 )
-
-PlotBrain = PlotBrainPyvista
