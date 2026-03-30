@@ -62,6 +62,7 @@ def main():
         files_to_copy = [
             "app.py",
             "requirements.txt",
+            "packages.txt",
             "pyproject.toml",
             "LICENSE",
         ]
