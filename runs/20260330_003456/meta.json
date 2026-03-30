@@ -1,0 +1,44 @@
+{
+  "id": "20260330_003456",
+  "timestamp": "2026-03-30T00:35:00.359055",
+  "stimulus_type": "Video",
+  "stimulus": "Video clip (first 5 seconds)",
+  "analysis": "## \ud83d\udcca Content Engagement Scorecard\n\n**Stimulus:** Video clip (first 5 seconds)\n\n### Overall Neural Engagement: 76/100 (B+)\n\n### Category Breakdown\n\n| Cognitive System | Score | Grade | What It Measures |\n|-----------------|-------|-------|------------------|\n| **Auditory & Language** | 77/100 | **B+** | Speech comprehension, voice impact, and word meaning |\n| **Visual Processing** | 75/100 | **B+** | How strongly visuals capture attention (faces, motion, color) |\n| **Emotion & Decision** | 76/100 | **B+** | Emotional resonance, trust, reward, and persuasion |\n| **Executive & Motor** | 73/100 | **B** | Active thinking, problem-solving, and action impulse |\n| **Attention & Spatial** | 79/100 | **B+** | Sustained focus and spatial awareness engagement |\n\n### Engagement Profile\n\n- **Auditory & Language**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591` 77/100 (B+)\n- **Visual Processing**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591` 75/100 (B+)\n- **Emotion & Decision**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591` 76/100 (B+)\n- **Executive & Motor**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591` 73/100 (B)\n- **Attention & Spatial**: `\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591` 79/100 (B+)\n\n---\n\n### \u23f1\ufe0f Engagement Timeline\n\n| Second | Engagement | Level |\n|--------|-----------|-------|\n| 1s | `\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591\u2591` 0.0666 |  |\n| 2s | `\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591\u2591` 0.0802 |  |\n| 3s | `\u2593\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591` 0.0890 |  |\n| 4s | `\u2593\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591` 0.0844 |  |\n| 5s | `\u2593\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591` 0.0880 |  |\n| 6s | `\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593` 0.1618 |  \u2190 PEAK |\n\n**Peak engagement:** Second 6\n**Attention sustained** throughout all 6 seconds \u2014 strong holding power\n\n---\n\n### \ud83e\udde0 Brain Laterality\n\n| Hemisphere | Activation | Processes |\n|-----------|-----------|----------|\n| **Left Brain** | 0.00986 | Language, logic, analytical thinking, speech |\n| **Right Brain** | 0.02847 | Creativity, emotion, spatial awareness, music |\n\n**Right-brain dominant** (laterality: -0.486) \u2014 This content engages **creative, emotional, and spatial** processing. Typical of music, visual art, emotionally-charged narratives, or immersive video.\n\n---\n\n### \ud83d\udd2e Predictive Insights\n\n| Metric | Prediction | Confidence |\n|--------|-----------|------------|\n| **Watch-Through Rate** | 100% of viewers will finish | High |\n| **24hr Ad Recall** | 68% recall probability | Medium |\n| **Purchase/Action Intent** | 65/100 | Moderate |\n| **Virality / Shareability** | 68/100 | Moderately Shareable |\n| **Cognitive Load** | 75/100 (High) | \u2014 |\n| **Optimal Content Length** | ~6s | Based on attention decay |\n| **Best Content Fit** | Informational | Based on cognitive profile |\n\n---\n\n### Key Findings\n\n**Strongest signal: Auditory & Language (B+).** This content is **speech/audio dominant** \u2014 the words and voice carry the most neural weight. The speaker's message is the primary engagement driver. \n\n### Recommendations\n\n1. \ud83d\udcca Content is performing adequately \u2014 consider A/B testing variations to optimize further\n\n### Bottom Line\n\n**76/100 \u2014 Good.** Solid engagement with room to improve. Focus on the weakest category.",
+  "top_regions": [
+    {
+      "region": "Temporal (Auditory/Language)",
+      "activation": 0.020972441881895065,
+      "peak": 0.46346044540405273,
+      "function": "Speech comprehension (Wernicke's area); Auditory processing (A1); Voice and social perception (STS)",
+      "category": "Auditory & Language"
+    },
+    {
+      "region": "Occipital (Visual Cortex)",
+      "activation": 0.020109133794903755,
+      "peak": 0.4580116271972656,
+      "function": "Primary visual processing (V1/V2); Color and motion detection (V4/MT); Object and face recognition (FFC)",
+      "category": "Visual Processing"
+    },
+    {
+      "region": "Prefrontal (Decision/Emotion)",
+      "activation": 0.018584949895739555,
+      "peak": 0.47299596667289734,
+      "function": "Decision-making and reward (OFC); Emotion regulation (vmPFC); Abstract reasoning and metacognition",
+      "category": "Emotion & Decision"
+    },
+    {
+      "region": "Frontal (Executive/Motor)",
+      "activation": 0.018302801996469498,
+      "peak": 0.44965860247612,
+      "function": "Working memory and planning (DLPFC); Motor execution and sequencing; Speech production (Broca's area)",
+      "category": "Executive & Motor"
+    },
+    {
+      "region": "Parietal (Spatial/Attention)",
+      "activation": 0.01829475723206997,
+      "peak": 0.5049176812171936,
+      "function": "Spatial attention (IPS); Sensorimotor integration; Body awareness and proprioception",
+      "category": "Attention & Spatial"
+    }
+  ]
+}

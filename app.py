@@ -574,6 +574,44 @@ def _generate_full_scorecard(data, stimulus_description):
     return report
 
 
+def _get_timestep_label(pred_slice, n_vertices):
+    """Compute dominant brain region for a single timestep and return a short label."""
+    half = n_vertices // 2
+    zones = {
+        "Visual": list(range(0, int(half * 0.15))) + list(range(half, half + int(half * 0.15))),
+        "Language": list(range(int(half * 0.15), int(half * 0.35))) + list(range(half + int(half * 0.15), half + int(half * 0.35))),
+        "Attention": list(range(int(half * 0.35), int(half * 0.55))) + list(range(half + int(half * 0.35), half + int(half * 0.55))),
+        "Executive": list(range(int(half * 0.55), int(half * 0.80))) + list(range(half + int(half * 0.55), half + int(half * 0.80))),
+        "Emotion": list(range(int(half * 0.80), half)) + list(range(half + int(half * 0.80), n_vertices)),
+    }
+    zone_scores = {}
+    for name, indices in zones.items():
+        valid = [i for i in indices if i < n_vertices]
+        if valid:
+            zone_scores[name] = float(np.mean(np.abs(pred_slice[valid])))
+    
+    sorted_zones = sorted(zone_scores.items(), key=lambda x: x[1], reverse=True)
+    top = sorted_zones[0][0] if sorted_zones else "Mixed"
+    second = sorted_zones[1][0] if len(sorted_zones) > 1 else ""
+    
+    engagement = float(np.mean(np.abs(pred_slice)))
+    
+    # Short descriptive labels
+    descriptions = {
+        "Visual": "Eyes processing imagery",
+        "Language": "Speech/words landing",
+        "Attention": "Focus locked in",
+        "Executive": "Active thinking",
+        "Emotion": "Emotional response",
+    }
+    
+    label = descriptions.get(top, top)
+    if second and zone_scores.get(second, 0) > zone_scores[top] * 0.8:
+        label += f" + {second.lower()}"
+    
+    return label
+
+
 def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc=""):
     """Generate brain plot AND AI analysis, then persist the run."""
     progress((0.4, 1.0), desc="Extracting Deep Multimodal AI Features (Heaviest Step)...")
@@ -584,6 +622,21 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     n_to_plot = min(len(preds), 4)
     sliced_preds = preds[:n_to_plot]
     fig = plotter.plot_timesteps(sliced_preds, show_stimuli=False)
+    
+    # Annotate each brain map with descriptive labels
+    n_vertices = preds.shape[1] if preds.ndim == 2 else (preds.shape[1] if len(preds.shape) > 1 else 0)
+    if n_vertices > 0:
+        for i in range(n_to_plot):
+            label = _get_timestep_label(sliced_preds[i], n_vertices)
+            # Position annotation below each brain subplot
+            x_pos = (i + 0.5) / n_to_plot
+            fig.text(
+                x_pos, 0.01, label,
+                ha="center", va="bottom",
+                fontsize=8, fontstyle="italic",
+                color="#666666",
+                transform=fig.transFigure
+            )
     
     progress((0.9, 1.0), desc="Analyzing Brain Activation Patterns...")
     interpretation, region_data = analyze_brain_regions(preds, stimulus_desc)
