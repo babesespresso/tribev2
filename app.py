@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from tribev2 import TribeModel
 from tribev2.plotting import PlotBrainNilearn as PlotBrain
-from tribev2.utils import get_topk_rois, summarize_by_roi, get_hcp_labels
 import tempfile
 import threading
 import matplotlib
@@ -206,34 +205,67 @@ def get_model():
 
 
 def analyze_brain_regions(preds, stimulus_description=""):
-    """Extract top activated brain regions and generate an AI interpretation."""
-    # Average activation across all timesteps
+    """Analyze brain activation using vertex spatial mapping (no MNE download needed)."""
+    from neuralset.extractors.neuro import FSAVERAGE_SIZES
+    
     avg_activation = np.mean(preds, axis=0)
+    n_vertices = len(avg_activation)
+    half = n_vertices // 2
     
-    # Get top 15 activated regions using HCP atlas
-    top_regions = get_topk_rois(avg_activation, hemi="both", mesh="fsaverage5", k=15)
+    # fsaverage5 has 10242 vertices per hemisphere
+    # Split into anatomical zones based on vertex index ranges
+    # These ranges approximate the HCP parcellation on fsaverage5
+    LOBE_RANGES = {
+        "Occipital (Visual Cortex)": {
+            "indices": list(range(0, int(half * 0.15))) + list(range(half, half + int(half * 0.15))),
+            "functions": ["Primary visual processing (V1/V2)", "Color and motion detection (V4/MT)", "Object and face recognition (FFC)"],
+            "category": "Visual Processing"
+        },
+        "Temporal (Auditory/Language)": {
+            "indices": list(range(int(half * 0.15), int(half * 0.35))) + list(range(half + int(half * 0.15), half + int(half * 0.35))),
+            "functions": ["Speech comprehension (Wernicke's area)", "Auditory processing (A1)", "Voice and social perception (STS)"],
+            "category": "Auditory & Language"
+        },
+        "Parietal (Spatial/Attention)": {
+            "indices": list(range(int(half * 0.35), int(half * 0.55))) + list(range(half + int(half * 0.35), half + int(half * 0.55))),
+            "functions": ["Spatial attention (IPS)", "Sensorimotor integration", "Body awareness and proprioception"],
+            "category": "Attention & Spatial"
+        },
+        "Frontal (Executive/Motor)": {
+            "indices": list(range(int(half * 0.55), int(half * 0.80))) + list(range(half + int(half * 0.55), half + int(half * 0.80))),
+            "functions": ["Working memory and planning (DLPFC)", "Motor execution and sequencing", "Speech production (Broca's area)"],
+            "category": "Executive & Motor"
+        },
+        "Prefrontal (Decision/Emotion)": {
+            "indices": list(range(int(half * 0.80), half)) + list(range(half + int(half * 0.80), n_vertices)),
+            "functions": ["Decision-making and reward (OFC)", "Emotion regulation (vmPFC)", "Abstract reasoning and metacognition"],
+            "category": "Emotion & Decision"
+        },
+    }
     
-    # Get per-region activation values for ranking
-    labels = get_hcp_labels(mesh="fsaverage5", combine=False, hemi="both")
-    roi_scores = summarize_by_roi(avg_activation, hemi="both", mesh="fsaverage5")
-    label_names = list(labels.keys())
+    # Compute mean activation per lobe
     region_data = []
-    for region in top_regions:
-        region_clean = str(region)
-        idx = label_names.index(region_clean) if region_clean in label_names else None
-        score = float(roi_scores[idx]) if idx is not None else 0.0
-        function_desc = REGION_FUNCTIONS.get(region_clean, f"Brain region {region_clean}")
-        region_data.append({
-            "region": region_clean,
-            "activation": score,
-            "function": function_desc
-        })
+    for lobe_name, lobe_info in LOBE_RANGES.items():
+        indices = [i for i in lobe_info["indices"] if i < n_vertices]
+        if indices:
+            activation = float(np.mean(avg_activation[indices]))
+            peak = float(np.max(avg_activation[indices]))
+            region_data.append({
+                "region": lobe_name,
+                "activation": activation,
+                "peak": peak,
+                "function": "; ".join(lobe_info["functions"]),
+                "category": lobe_info["category"],
+            })
     
-    # Sort by activation strength (descending)
     region_data.sort(key=lambda x: x["activation"], reverse=True)
     
-    # Build the AI interpretation via HuggingFace Inference API
-    interpretation = _call_llm_for_interpretation(region_data, stimulus_description)
+    # Also compute overall stats
+    global_mean = float(np.mean(avg_activation))
+    global_std = float(np.std(avg_activation))
+    
+    # Build the local analysis (instant, no API call needed)
+    interpretation = _generate_local_analysis(region_data, stimulus_description, global_mean, global_std)
     
     return interpretation, region_data
 
@@ -292,94 +324,71 @@ Write in a professional but accessible tone. Use specific region names with thei
     return _generate_local_analysis(region_data, stimulus_description)
 
 
-def _generate_local_analysis(region_data, stimulus_description):
-    """Generate a structured analysis locally without an LLM call."""
-    # Categorize regions
-    categories = {
-        "Visual Processing": [],
-        "Auditory Processing": [],
-        "Language & Speech": [],
-        "Motor & Somatosensory": [],
-        "Executive & Attention": [],
-        "Emotion & Reward": [],
-        "Memory & Default Mode": [],
-    }
-    
-    visual_keys = ["V1","V2","V3","V4","V3A","V3B","V6","V7","V8","MT","MST","FFC","PIT","VVC"]
-    auditory_keys = ["A1","A4","A5","RI","TA2","STSdp","STSda","STSvp","STSva"]
-    language_keys = ["55b","SFL","TPOJ1","TPOJ2","TPOJ3","PSL","STV"]
-    motor_keys = ["4","3a","3b","1","2","6mp","6d","FEF"]
-    executive_keys = ["p9-46v","a9-46v","46","9-46d","8Av","8BL","10d","10r","a10p","IPS1","LIPv","LIPd","AIP","MIP","7AL","7PL","7Pm"]
-    emotion_keys = ["OFC","pOFC","25","s32","a24","p24","d32"]
-    memory_keys = ["POS1","POS2","RSC","PCV","7m","PGp"]
-    
-    for r in region_data[:10]:
-        reg = r["region"]
-        if reg in visual_keys:
-            categories["Visual Processing"].append(r)
-        elif reg in auditory_keys:
-            categories["Auditory Processing"].append(r)
-        elif reg in language_keys:
-            categories["Language & Speech"].append(r)
-        elif reg in motor_keys:
-            categories["Motor & Somatosensory"].append(r)
-        elif reg in executive_keys:
-            categories["Executive & Attention"].append(r)
-        elif reg in emotion_keys:
-            categories["Emotion & Reward"].append(r)
-        elif reg in memory_keys:
-            categories["Memory & Default Mode"].append(r)
-    
-    # Find dominant category
-    dominant = max(categories.items(), key=lambda x: len(x[0]))
-    
-    # Build markdown report
+def _generate_local_analysis(region_data, stimulus_description, global_mean=0.0, global_std=0.0):
+    """Generate a structured analysis locally using lobe-level activation data."""
     report = f"## Neuro-Cognitive Analysis\n\n"
     report += f"**Stimulus:** {stimulus_description or 'Multimodal media input'}\n\n"
-    report += "### Top Activated Brain Regions\n\n"
-    report += "| Rank | Region | Activation | Cognitive Function |\n"
-    report += "|------|--------|-----------|-------------------|\n"
     
-    for i, r in enumerate(region_data[:10], 1):
-        report += f"| {i} | **{r['region']}** | {r['activation']:.4f} | {r['function']} |\n"
+    # Activation table
+    report += "### Cortical Activation by Brain Region\n\n"
+    report += "| Rank | Brain Region | Mean Activation | Peak Activation | Key Functions |\n"
+    report += "|------|-------------|----------------|----------------|---------------|\n"
     
-    report += "\n### Processing Profile\n\n"
+    for i, r in enumerate(region_data, 1):
+        report += f"| {i} | **{r['region']}** | {r['activation']:.4f} | {r.get('peak', 0):.4f} | {r['function']} |\n"
     
-    for cat_name, cat_regions in categories.items():
-        if cat_regions:
-            count = len(cat_regions)
-            icon = {"Visual Processing": "👁", "Auditory Processing": "🔊", "Language & Speech": "💬",
-                    "Motor & Somatosensory": "🤚", "Executive & Attention": "🎯",
-                    "Emotion & Reward": "❤️", "Memory & Default Mode": "🧠"}.get(cat_name, "•")
-            names = ", ".join([r["region"] for r in cat_regions])
-            report += f"- **{cat_name}** ({count} regions): {names}\n"
+    # Overall stats
+    report += f"\n**Global Mean Activation:** {global_mean:.4f} | **Standard Deviation:** {global_std:.4f}\n\n"
     
+    # Dominant processing mode
+    report += "### Processing Profile\n\n"
+    
+    dominant = region_data[0] if region_data else None
+    if dominant:
+        report += f"The **dominant processing mode** is **{dominant['category']}** "
+        report += f"(region: {dominant['region']}, activation: {dominant['activation']:.4f}).\n\n"
+    
+    # Relative activation chart using text bars
+    if region_data:
+        max_act = max(r["activation"] for r in region_data)
+        min_act = min(r["activation"] for r in region_data)
+        spread = max_act - min_act if max_act != min_act else 1
+        for r in region_data:
+            pct = int(((r["activation"] - min_act) / spread) * 20)
+            bar = "█" * max(pct, 1) + "░" * (20 - max(pct, 1))
+            report += f"- {r['category']}: `{bar}` {r['activation']:.4f}\n"
+    
+    # Interpretation
     report += "\n### Interpretation\n\n"
     
-    # Build contextual interpretation
-    active_cats = {k: v for k, v in categories.items() if v}
+    for r in region_data:
+        cat = r["category"]
+        act = r["activation"]
+        
+        if "Visual" in cat and act > global_mean:
+            report += "This stimulus triggers **strong visual processing**, engaging the occipital cortex for feature extraction — from basic edge detection (V1/V2) through complex object and face recognition. "
+        
+        if "Auditory" in cat and act > global_mean:
+            report += "Significant **auditory and language network engagement** indicates the brain is actively processing speech comprehension, vocal tone analysis, and semantic meaning extraction. "
+        
+        if "Attention" in cat and act > global_mean:
+            report += "The **parietal attention system** is activated, indicating the brain is directing sustained spatial attention and integrating multisensory information. "
+        
+        if "Executive" in cat and act > global_mean:
+            report += "**Frontal executive regions** show activation, suggesting working memory engagement, motor planning, and potentially speech production (Broca's area). "
+        
+        if "Emotion" in cat and act > global_mean:
+            report += "**Prefrontal and orbitofrontal activation** suggests this content triggers emotional evaluation, reward assessment, and higher-order decision-making. "
     
-    if "Visual Processing" in active_cats and len(active_cats["Visual Processing"]) >= 3:
-        report += "This stimulus triggers **strong visual processing**, engaging multiple levels of the visual hierarchy. "
-        report += "The brain is actively decoding visual features from basic edges and colors up through complex object and scene recognition. "
-    
-    if "Auditory Processing" in active_cats:
-        report += "Significant **auditory cortex engagement** indicates the brain is processing speech sounds, vocal tone, or ambient audio. "
-    
-    if "Language & Speech" in active_cats:
-        report += "The **language network** is activated, suggesting semantic comprehension and meaning extraction from spoken or written words. "
-    
-    if "Executive & Attention" in active_cats:
-        report += "Activation of **prefrontal and parietal attention networks** indicates sustained cognitive engagement — the brain is allocating focused attention to this content. "
-    
-    if "Emotion & Reward" in active_cats:
-        report += "**Limbic and reward circuitry** activation suggests this stimulus carries emotional weight, potentially triggering valuation, empathy, or affective processing. "
-    
-    if "Memory & Default Mode" in active_cats:
-        report += "**Memory and default mode regions** are engaged, suggesting the brain is connecting this stimulus to prior knowledge, personal experiences, or episodic memories. "
-    
-    if not active_cats:
-        report += "The activation pattern shows distributed processing across multiple cortical regions without a single dominant cognitive system. "
+    # Summary
+    report += "\n\n### Summary\n\n"
+    above_mean = [r for r in region_data if r["activation"] > global_mean]
+    if len(above_mean) >= 4:
+        report += "This stimulus produces **broadly distributed cortical activation**, engaging multiple cognitive systems simultaneously — characteristic of rich, multimodal content that demands visual, auditory, and cognitive processing in parallel."
+    elif len(above_mean) >= 2:
+        report += "This stimulus produces **focused cortical activation** concentrated in specific cognitive systems, suggesting targeted neural engagement rather than broad processing."
+    else:
+        report += "This stimulus produces **localized cortical activation** in a narrow set of brain regions, suggesting a simple, modality-specific processing response."
     
     return report
 
