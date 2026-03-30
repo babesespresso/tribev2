@@ -1,57 +1,417 @@
 import gradio as gr
 import os
 import torch
+import numpy as np
+import json
+import requests
+from datetime import datetime
+from pathlib import Path
 from tribev2 import TribeModel
 from tribev2.plotting import PlotBrainNilearn as PlotBrain
+from tribev2.utils import get_topk_rois, summarize_by_roi, get_hcp_labels
 import tempfile
 import threading
 import matplotlib
-import time
 
 matplotlib.use('Agg')
+
+# --- Run History Storage ---
+RUNS_DIR = Path("./runs")
+RUNS_DIR.mkdir(exist_ok=True)
+
+def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data):
+    """Persist a completed run to disk."""
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = RUNS_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save the brain plot as PNG
+    plot_path = run_dir / "brain_map.png"
+    fig.savefig(str(plot_path), dpi=150, bbox_inches="tight", facecolor="#09090b")
+    
+    # Save metadata + analysis as JSON
+    meta = {
+        "id": run_id,
+        "timestamp": datetime.now().isoformat(),
+        "stimulus_type": stimulus_type,
+        "stimulus": stimulus_desc,
+        "analysis": analysis,
+        "top_regions": region_data[:10],
+    }
+    with open(run_dir / "meta.json", "w") as f:
+        json.dump(meta, f, indent=2, default=str)
+    
+    return run_id
+
+def load_all_runs():
+    """Load all saved runs, newest first."""
+    runs = []
+    for run_dir in sorted(RUNS_DIR.iterdir(), reverse=True):
+        meta_path = run_dir / "meta.json"
+        if meta_path.exists():
+            with open(meta_path) as f:
+                meta = json.load(f)
+            meta["plot_path"] = str(run_dir / "brain_map.png")
+            runs.append(meta)
+    return runs
+
+def get_history_choices():
+    """Return dropdown choices for run history."""
+    runs = load_all_runs()
+    if not runs:
+        return []
+    choices = []
+    for r in runs:
+        ts = datetime.fromisoformat(r["timestamp"]).strftime("%b %d, %Y %I:%M %p")
+        label = f"{ts}  |  {r['stimulus_type']}  |  {r['stimulus'][:60]}"
+        choices.append((label, r["id"]))
+    return choices
+
+def view_run(run_id):
+    """Load a specific run's plot and analysis."""
+    if not run_id:
+        return None, "*Select a run from the dropdown above.*"
+    run_dir = RUNS_DIR / run_id
+    meta_path = run_dir / "meta.json"
+    plot_path = run_dir / "brain_map.png"
+    if not meta_path.exists():
+        return None, "Run not found."
+    with open(meta_path) as f:
+        meta = json.load(f)
+    img = str(plot_path) if plot_path.exists() else None
+    return img, meta.get("analysis", "No analysis available.")
+
+def delete_run(run_id):
+    """Delete a run from history."""
+    if not run_id:
+        return gr.update(choices=get_history_choices()), None, "*No run selected.*"
+    import shutil
+    run_dir = RUNS_DIR / run_id
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    return gr.update(choices=get_history_choices()), None, "*Run deleted.*"
 
 model = None
 plotter = PlotBrain(mesh="fsaverage5")
 model_lock = threading.Lock()
 
+# --- HCP Region → Human-readable cognitive function mapping ---
+REGION_FUNCTIONS = {
+    # Visual Cortex
+    "V1": "Primary Visual Cortex — basic visual feature detection (edges, contrast, orientation)",
+    "V2": "Secondary Visual Cortex — texture and pattern processing",
+    "V3": "Visual Area 3 — dynamic form and motion boundaries",
+    "V4": "Visual Area 4 — color perception and object recognition",
+    "MT": "Middle Temporal (V5) — motion detection and speed perception",
+    "MST": "Medial Superior Temporal — optic flow and self-motion",
+    "V6": "Visual Area 6 — peripheral vision and ego-motion",
+    "V3A": "Visual Area 3A — depth perception and stereoscopic vision",
+    "V3B": "Visual Area 3B — 3D shape processing",
+    "V7": "Visual Area 7 — spatial attention in visual field",
+    "V8": "Visual Area 8 — color and face perception",
+    "FFC": "Fusiform Face Complex — face and body recognition",
+    "PIT": "Posterior Inferotemporal — object categorization",
+    "VVC": "Ventral Visual Complex — high-level object and scene recognition",
+    
+    # Auditory Cortex
+    "A1": "Primary Auditory Cortex — basic sound processing (pitch, tone)",
+    "A4": "Auditory Area 4 — complex sound recognition",
+    "A5": "Auditory Association — sound meaning and categorization",
+    "RI": "Retroinsular Cortex — auditory-spatial integration",
+    "TA2": "Temporal Association 2 — speech sound processing",
+    "STSdp": "Superior Temporal Sulcus (dorsal posterior) — voice and biological motion",
+    "STSda": "Superior Temporal Sulcus (dorsal anterior) — audiovisual integration",
+    "STSvp": "Superior Temporal Sulcus (ventral posterior) — speech comprehension",
+    "STSva": "Superior Temporal Sulcus (ventral anterior) — social perception",
+
+    # Language
+    "55b": "Area 55b — speech production planning",
+    "SFL": "Superior Frontal Language — sentence processing",
+    "TPOJ1": "Temporo-Parieto-Occipital Junction 1 — language comprehension",
+    "TPOJ2": "Temporo-Parieto-Occipital Junction 2 — semantic processing",
+    "TPOJ3": "Temporo-Parieto-Occipital Junction 3 — meaning integration",
+    "PSL": "Perisylvian Language — phonological processing",
+    "STV": "Superior Temporal Visual — reading and letter recognition",
+
+    # Motor/Somatosensory
+    "4": "Primary Motor Cortex — voluntary movement execution",
+    "3a": "Somatosensory 3a — proprioception (body position sense)",
+    "3b": "Primary Somatosensory Cortex — touch discrimination",
+    "1": "Somatosensory Area 1 — texture perception",
+    "2": "Somatosensory Area 2 — shape and size by touch",
+    "6mp": "Supplementary Motor — movement planning and sequencing",
+    "6d": "Dorsal Premotor — reaching and grasping planning",
+    "FEF": "Frontal Eye Fields — voluntary eye movements",
+
+    # Prefrontal / Executive
+    "p9-46v": "Ventrolateral Prefrontal — working memory and decision-making",
+    "a9-46v": "Anterior Ventrolateral Prefrontal — cognitive control",
+    "46": "Dorsolateral Prefrontal Area 46 — executive reasoning",
+    "9-46d": "Dorsolateral Prefrontal — strategic planning",
+    "8Av": "Prefrontal 8Av — attention control",
+    "8BL": "Prefrontal 8BL — cognitive set-shifting",
+    "10d": "Frontopolar 10d — prospective memory and multitasking",
+    "10r": "Frontopolar 10r — abstract reasoning",
+    "a10p": "Anterior Frontopolar — metacognition",
+
+    # Emotion / Limbic
+    "OFC": "Orbitofrontal Cortex — reward valuation and emotion regulation",
+    "pOFC": "Posterior Orbitofrontal — emotional decision-making",
+    "25": "Subgenual Cingulate — mood regulation (depression target)",
+    "s32": "Subgenual Area 32 — emotional conflict resolution",
+    "a24": "Anterior Cingulate 24 — motivation and pain processing",
+    "p24": "Posterior Cingulate 24 — emotional awareness",
+    "d32": "Dorsal Area 32 — error monitoring and conflict detection",
+    
+    # Memory / Default Mode Network
+    "POS1": "Parieto-Occipital Sulcus 1 — episodic memory retrieval",
+    "POS2": "Parieto-Occipital Sulcus 2 — spatial memory",
+    "RSC": "Retrosplenial Cortex — spatial navigation and memory",
+    "PCV": "Precuneus Visual — self-referential thought and memory",
+    "7m": "Medial Area 7 — visuospatial processing and imagery",
+    "PGp": "Angular Gyrus (posterior) — semantic memory retrieval",
+    
+    # Attention / Parietal
+    "IPS1": "Intraparietal Sulcus 1 — spatial attention",
+    "LIPv": "Lateral Intraparietal (ventral) — saccade planning and attention",
+    "LIPd": "Lateral Intraparietal (dorsal) — decision-making under uncertainty",
+    "AIP": "Anterior Intraparietal — grasping and tool use",
+    "MIP": "Medial Intraparietal — reaching and pointing",
+    "7AL": "Parietal Area 7AL — sensorimotor integration",
+    "7PL": "Parietal Area 7PL — spatial awareness",
+    "7Pm": "Parietal Area 7Pm — visual-spatial orientation",
+}
+
 def get_model():
     global model
     with model_lock:
         if model is None:
-            print("Loading TRIBE v2 model... this may take a minute.")
+            use_mps = torch.backends.mps.is_available()
+            label = "mps (Apple GPU)" if use_mps else "cpu"
+            print(f"Loading TRIBE v2 model... text extractor → {label}, others → cpu")
             model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
             if not torch.cuda.is_available():
-                for attr in ["neuro", "text_feature", "audio_feature", "video_feature", "image_feature"]:
+                for attr in ["neuro", "audio_feature", "video_feature", "image_feature"]:
                     extractor = getattr(model.data, attr, None)
                     if extractor is not None:
                         if hasattr(extractor, "device"):
                             extractor.device = "cpu"
                         if hasattr(extractor, "image") and hasattr(extractor.image, "device"):
                             extractor.image.device = "cpu"
+                text_ext = getattr(model.data, "text_feature", None)
+                if text_ext is not None and hasattr(text_ext, "device"):
+                    text_ext.device = "mps" if use_mps else "cpu"
             print("Model loaded successfully.")
     return model
 
-def generate_plot(df, progress):
+
+def analyze_brain_regions(preds, stimulus_description=""):
+    """Extract top activated brain regions and generate an AI interpretation."""
+    # Average activation across all timesteps
+    avg_activation = np.mean(preds, axis=0)
+    
+    # Get top 15 activated regions using HCP atlas
+    top_regions = get_topk_rois(avg_activation, hemi="both", mesh="fsaverage5", k=15)
+    
+    # Get per-region activation values for ranking
+    labels = get_hcp_labels(mesh="fsaverage5", combine=False, hemi="both")
+    roi_scores = summarize_by_roi(avg_activation, hemi="both", mesh="fsaverage5")
+    label_names = list(labels.keys())
+    region_data = []
+    for region in top_regions:
+        region_clean = str(region)
+        idx = label_names.index(region_clean) if region_clean in label_names else None
+        score = float(roi_scores[idx]) if idx is not None else 0.0
+        function_desc = REGION_FUNCTIONS.get(region_clean, f"Brain region {region_clean}")
+        region_data.append({
+            "region": region_clean,
+            "activation": score,
+            "function": function_desc
+        })
+    
+    # Sort by activation strength (descending)
+    region_data.sort(key=lambda x: x["activation"], reverse=True)
+    
+    # Build the AI interpretation via HuggingFace Inference API
+    interpretation = _call_llm_for_interpretation(region_data, stimulus_description)
+    
+    return interpretation, region_data
+
+
+def _call_llm_for_interpretation(region_data, stimulus_description):
+    """Call HuggingFace Inference API to generate a neuroscience interpretation."""
+    hf_token = os.environ.get("HF_TOKEN", "")
+    
+    # Build a structured prompt
+    regions_text = ""
+    for i, r in enumerate(region_data[:10], 1):
+        regions_text += f"{i}. **{r['region']}** (activation: {r['activation']:.4f})\n   → {r['function']}\n"
+    
+    prompt = f"""You are a computational neuroscientist analyzing predicted fMRI brain activation patterns from Meta's TRIBE v2 model.
+
+The stimulus was: "{stimulus_description if stimulus_description else 'a multimodal media input (video/audio/text)'}"
+
+The top 10 most activated cortical regions (from the HCP MMP1.0 parcellation on fsaverage5) are:
+
+{regions_text}
+
+Write a clear, concise analysis (3-4 paragraphs) for a non-specialist audience that explains:
+1. **Dominant Processing Mode**: What cognitive systems are most engaged (visual, auditory, language, emotional, etc.)
+2. **Key Findings**: What the activation pattern reveals about how the brain would process this stimulus
+3. **Emotional & Attentional Signature**: Any regions linked to emotion, attention, or memory that suggest deeper engagement
+4. **Practical Insight**: What this means in plain language — is this content visually dominant? Emotionally engaging? Linguistically complex?
+
+Write in a professional but accessible tone. Use specific region names with their functions in parentheses."""
+
+    # Try HuggingFace Inference API
+    if hf_token:
+        try:
+            headers = {"Authorization": f"Bearer {hf_token}"}
+            payload = {
+                "inputs": prompt,
+                "parameters": {"max_new_tokens": 600, "temperature": 0.7}
+            }
+            response = requests.post(
+                "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    text = result[0].get("generated_text", "")
+                    # Strip the prompt from the response
+                    if prompt in text:
+                        text = text[len(prompt):].strip()
+                    return text
+        except Exception as e:
+            print(f"[LLM API] Failed: {e}")
+    
+    # Fallback: generate a structured local analysis without an LLM
+    return _generate_local_analysis(region_data, stimulus_description)
+
+
+def _generate_local_analysis(region_data, stimulus_description):
+    """Generate a structured analysis locally without an LLM call."""
+    # Categorize regions
+    categories = {
+        "Visual Processing": [],
+        "Auditory Processing": [],
+        "Language & Speech": [],
+        "Motor & Somatosensory": [],
+        "Executive & Attention": [],
+        "Emotion & Reward": [],
+        "Memory & Default Mode": [],
+    }
+    
+    visual_keys = ["V1","V2","V3","V4","V3A","V3B","V6","V7","V8","MT","MST","FFC","PIT","VVC"]
+    auditory_keys = ["A1","A4","A5","RI","TA2","STSdp","STSda","STSvp","STSva"]
+    language_keys = ["55b","SFL","TPOJ1","TPOJ2","TPOJ3","PSL","STV"]
+    motor_keys = ["4","3a","3b","1","2","6mp","6d","FEF"]
+    executive_keys = ["p9-46v","a9-46v","46","9-46d","8Av","8BL","10d","10r","a10p","IPS1","LIPv","LIPd","AIP","MIP","7AL","7PL","7Pm"]
+    emotion_keys = ["OFC","pOFC","25","s32","a24","p24","d32"]
+    memory_keys = ["POS1","POS2","RSC","PCV","7m","PGp"]
+    
+    for r in region_data[:10]:
+        reg = r["region"]
+        if reg in visual_keys:
+            categories["Visual Processing"].append(r)
+        elif reg in auditory_keys:
+            categories["Auditory Processing"].append(r)
+        elif reg in language_keys:
+            categories["Language & Speech"].append(r)
+        elif reg in motor_keys:
+            categories["Motor & Somatosensory"].append(r)
+        elif reg in executive_keys:
+            categories["Executive & Attention"].append(r)
+        elif reg in emotion_keys:
+            categories["Emotion & Reward"].append(r)
+        elif reg in memory_keys:
+            categories["Memory & Default Mode"].append(r)
+    
+    # Find dominant category
+    dominant = max(categories.items(), key=lambda x: len(x[0]))
+    
+    # Build markdown report
+    report = f"## Neuro-Cognitive Analysis\n\n"
+    report += f"**Stimulus:** {stimulus_description or 'Multimodal media input'}\n\n"
+    report += "### Top Activated Brain Regions\n\n"
+    report += "| Rank | Region | Activation | Cognitive Function |\n"
+    report += "|------|--------|-----------|-------------------|\n"
+    
+    for i, r in enumerate(region_data[:10], 1):
+        report += f"| {i} | **{r['region']}** | {r['activation']:.4f} | {r['function']} |\n"
+    
+    report += "\n### Processing Profile\n\n"
+    
+    for cat_name, cat_regions in categories.items():
+        if cat_regions:
+            count = len(cat_regions)
+            icon = {"Visual Processing": "👁", "Auditory Processing": "🔊", "Language & Speech": "💬",
+                    "Motor & Somatosensory": "🤚", "Executive & Attention": "🎯",
+                    "Emotion & Reward": "❤️", "Memory & Default Mode": "🧠"}.get(cat_name, "•")
+            names = ", ".join([r["region"] for r in cat_regions])
+            report += f"- **{cat_name}** ({count} regions): {names}\n"
+    
+    report += "\n### Interpretation\n\n"
+    
+    # Build contextual interpretation
+    active_cats = {k: v for k, v in categories.items() if v}
+    
+    if "Visual Processing" in active_cats and len(active_cats["Visual Processing"]) >= 3:
+        report += "This stimulus triggers **strong visual processing**, engaging multiple levels of the visual hierarchy. "
+        report += "The brain is actively decoding visual features from basic edges and colors up through complex object and scene recognition. "
+    
+    if "Auditory Processing" in active_cats:
+        report += "Significant **auditory cortex engagement** indicates the brain is processing speech sounds, vocal tone, or ambient audio. "
+    
+    if "Language & Speech" in active_cats:
+        report += "The **language network** is activated, suggesting semantic comprehension and meaning extraction from spoken or written words. "
+    
+    if "Executive & Attention" in active_cats:
+        report += "Activation of **prefrontal and parietal attention networks** indicates sustained cognitive engagement — the brain is allocating focused attention to this content. "
+    
+    if "Emotion & Reward" in active_cats:
+        report += "**Limbic and reward circuitry** activation suggests this stimulus carries emotional weight, potentially triggering valuation, empathy, or affective processing. "
+    
+    if "Memory & Default Mode" in active_cats:
+        report += "**Memory and default mode regions** are engaged, suggesting the brain is connecting this stimulus to prior knowledge, personal experiences, or episodic memories. "
+    
+    if not active_cats:
+        report += "The activation pattern shows distributed processing across multiple cortical regions without a single dominant cognitive system. "
+    
+    return report
+
+
+def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc=""):
+    """Generate brain plot AND AI analysis, then persist the run."""
     progress((0.4, 1.0), desc="Extracting Deep Multimodal AI Features (Heaviest Step)...")
     m = get_model()
-    # Smooth progress mapping passed into the core engine
     preds, segments = m.predict(events=df, gradio_progress=progress)
     
-    progress((0.8, 1.0), desc="Rendering Topographical 3D Mesh Output...")
-    
-    # By default, predictions is 1 second = 1 frame. Let's cap at 5 seconds for visual layout speeds.
+    progress((0.75, 1.0), desc="Rendering 3D Brain Mesh...")
     n_to_plot = min(len(preds), 4)
     sliced_preds = preds[:n_to_plot]
-    
-    # Create the figures
     fig = plotter.plot_timesteps(sliced_preds, show_stimuli=False)
     
+    progress((0.9, 1.0), desc="Analyzing Brain Activation Patterns...")
+    interpretation, region_data = analyze_brain_regions(preds, stimulus_desc)
+    
+    # Persist the run
+    progress((0.95, 1.0), desc="Saving run to history...")
+    try:
+        save_run(stimulus_type, stimulus_desc, fig, interpretation, region_data)
+    except Exception as e:
+        print(f"[Run History] Failed to save: {e}")
+    
     progress((1.0, 1.0), desc="Complete")
-    return fig
+    return fig, interpretation
+
 
 def process_text(text, progress=gr.Progress()):
     if not text.strip():
-        return None
+        return None, ""
         
     if len(text) > 150:
         gr.Warning("Text exceeded 150 characters. Truncating to bypass local hardware bottlenecks.")
@@ -65,31 +425,31 @@ def process_text(text, progress=gr.Progress()):
     try:
         progress((0.2, 1.0), desc="Processing text embeddings...")
         df = get_model().get_events_dataframe(text_path=tmp_path)
-        return generate_plot(df, progress)
+        return generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc=text)
     finally:
         os.unlink(tmp_path)
         
 def process_audio(audio_path, progress=gr.Progress()):
     if not audio_path:
-        return None
+        return None, ""
     progress((0.0, 1.0), desc="Loading Audio & Whisper Extractors...")
     progress((0.15, 1.0), desc="Extracting Audio & Phonetics Features...")
     df = get_model().get_events_dataframe(audio_path=audio_path)
-    return generate_plot(df, progress)
+    return generate_plot_and_analysis(df, progress, stimulus_type="Audio", stimulus_desc="Audio recording")
 
 def process_video(video_path, progress=gr.Progress()):
     if not video_path:
-        return None
+        return None, ""
     progress((0.0, 1.0), desc="Trimming video and Splitting Frames...")
     
-    # Auto-trim the video to the first 5 seconds to guarantee fast local execution
     ext = os.path.splitext(video_path)[1]
     trimmed_path = video_path.replace(ext, f"_trimmed{ext}")
     os.system(f'ffmpeg -y -i "{video_path}" -t 5 -c copy "{trimmed_path}" -loglevel quiet')
     
     progress((0.15, 1.0), desc="Extracting Video Motion & Semantics via V-JEPA2...")
     df = get_model().get_events_dataframe(video_path=trimmed_path)
-    return generate_plot(df, progress)
+    return generate_plot_and_analysis(df, progress, stimulus_type="Video", stimulus_desc="Video clip (first 5 seconds)")
+
 
 # --- Custom Theme & Modern Black Dashboard Styling ---
 custom_theme = gr.themes.Base(
@@ -130,7 +490,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
             TRIBE v2 Brain Encoding
         </h1>
         <p style="font-size: 1.05rem; color: #71717a; max-width: 700px; line-height: 1.5;">
-            A Multimodal Foundation Model for In-Silico Neuroscience. Upload naturalistic stimuli to structurally predict human fMRI activity directly mapped onto the cortical mesh.
+            Upload text, audio, or video to predict human fMRI brain activity. The AI will map cortical activation patterns and provide a detailed cognitive analysis.
         </p>
     </div>
     """)
@@ -153,7 +513,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
                     audio_btn = gr.Button("Execute Brain Mapping", variant="primary", size="lg")
                     
                 with gr.Tab("Video Inference"):
-                    gr.Markdown("Upload standard video formats. Note: Length is truncated to 5 seconds by default to bypass CPU processing bottlenecks.")
+                    gr.Markdown("Upload standard video formats. Auto-trimmed to 5 seconds.")
                     video_in = gr.Video(label="Video Stimulus", sources=["upload"])
                     video_btn = gr.Button("Execute Brain Mapping", variant="primary", size="lg")
                     
@@ -161,10 +521,56 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
             gr.Markdown("### Predicted Cortical Activation")
             out_plot = gr.Plot(label="", show_label=False)
 
-    # Wire up the events
-    text_btn.click(fn=process_text, inputs=text_in, outputs=out_plot)
-    audio_btn.click(fn=process_audio, inputs=audio_in, outputs=out_plot)
-    video_btn.click(fn=process_video, inputs=video_in, outputs=out_plot)
+    gr.Markdown("---")
+    gr.Markdown("### AI Neuro-Cognitive Analysis")
+    out_analysis = gr.Markdown(value="*Run a brain mapping to see the AI interpretation of cortical activation patterns.*")
+
+    # Wire up the events — now outputs both plot AND analysis
+    text_btn.click(fn=process_text, inputs=text_in, outputs=[out_plot, out_analysis])
+    audio_btn.click(fn=process_audio, inputs=audio_in, outputs=[out_plot, out_analysis])
+    video_btn.click(fn=process_video, inputs=video_in, outputs=[out_plot, out_analysis])
+
+    # --- Run History Section ---
+    gr.HTML("""
+    <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #27272a;">
+        <h2 style="font-size: 1.5rem; font-weight: 400; letter-spacing: -0.02em; color: #ffffff; display: flex; align-items: center; gap: 10px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Run History
+        </h2>
+        <p style="color: #71717a; font-size: 0.9rem;">All completed brain mappings are saved here. Select a past run to review its results.</p>
+    </div>
+    """)
+
+    with gr.Row():
+        with gr.Column(scale=5):
+            history_dropdown = gr.Dropdown(
+                label="Past Runs",
+                choices=get_history_choices(),
+                interactive=True,
+                value=None
+            )
+        with gr.Column(scale=1):
+            refresh_btn = gr.Button("Refresh", variant="secondary", size="sm")
+            delete_btn = gr.Button("Delete Run", variant="secondary", size="sm")
+
+    history_image = gr.Image(label="Brain Map", show_label=False, type="filepath")
+    history_analysis = gr.Markdown(value="*Select a run from the dropdown above.*")
+
+    # History event handlers
+    history_dropdown.change(
+        fn=view_run,
+        inputs=history_dropdown,
+        outputs=[history_image, history_analysis]
+    )
+    refresh_btn.click(
+        fn=lambda: gr.update(choices=get_history_choices()),
+        outputs=history_dropdown
+    )
+    delete_btn.click(
+        fn=delete_run,
+        inputs=history_dropdown,
+        outputs=[history_dropdown, history_image, history_analysis]
+    )
 
 if __name__ == "__main__":
     app.launch(server_name="0.0.0.0", server_port=7860)

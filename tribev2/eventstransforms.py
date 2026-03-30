@@ -104,8 +104,15 @@ class ExtractWordsFromAudio(EventsTransform):
         if language not in language_codes:
             raise ValueError(f"Language {language} not supported")
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if torch.cuda.is_available() else "int8"
+        if torch.cuda.is_available():
+            device = "cuda"
+            compute_type = "float16"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+            compute_type = "int8"
+        else:
+            device = "cpu"
+            compute_type = "int8"
 
         with tempfile.TemporaryDirectory() as output_dir:
             logger.info("Running whisperx via uvx...")

@@ -305,6 +305,7 @@ class BasePlotBrain(pydantic.BaseModel):
             height_ratios=height_ratios,
             figsize=(2.5 * n_timesteps, 2 * sum(height_ratios)),
             gridspec_kw={"wspace": 0.0, "hspace": 0},
+            subplot_kw={"projection": "3d"}
         )
         for k, ax in axes.items():
             if (
@@ -449,7 +450,7 @@ class BasePlotBrain(pydantic.BaseModel):
         tmp_dir = filepath.parent / "tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         for i in tqdm(range(len(neuro)), desc="Plotting..."):
-            out_fig, ax = plt.subplots(1, 1, figsize=(3, 3))
+            out_fig, ax = plt.subplots(1, 1, figsize=(3, 3), subplot_kw={"projection": "3d"})
             self.plot_surf(
                 neuro[i],
                 axes=[ax],
