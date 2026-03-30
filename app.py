@@ -761,13 +761,27 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
                     
                 with gr.Tab("Audio Inference"):
                     gr.Markdown("Upload voice clips or music.")
-                    audio_in = gr.Audio(label="Audio Stimulus", type="filepath")
+                    audio_upload = gr.File(label="Upload Audio File", file_types=["audio"])
+                    audio_preview = gr.Audio(label="Preview", interactive=False, visible=False)
+                    audio_in = gr.State()
                     audio_btn = gr.Button("Execute Brain Mapping", variant="primary", size="lg")
+                    
+                    def process_audio_upload(f):
+                        if not f: return None, gr.update(visible=False)
+                        return f, gr.update(value=f, visible=True)
+                    audio_upload.change(process_audio_upload, inputs=audio_upload, outputs=[audio_in, audio_preview])
                     
                 with gr.Tab("Video Inference"):
                     gr.Markdown("Upload standard video formats. Auto-trimmed to 5 seconds.")
-                    video_in = gr.Video(label="Video Stimulus", sources=["upload"])
+                    video_upload = gr.File(label="Upload Video File", file_types=["video"])
+                    video_preview = gr.Video(label="Preview", interactive=False, visible=False)
+                    video_in = gr.State()
                     video_btn = gr.Button("Execute Brain Mapping", variant="primary", size="lg")
+                    
+                    def process_video_upload(f):
+                        if not f: return None, gr.update(visible=False)
+                        return f, gr.update(value=f, visible=True)
+                    video_upload.change(process_video_upload, inputs=video_upload, outputs=[video_in, video_preview])
                     
         with gr.Column(scale=5):
             with gr.Row():
@@ -813,15 +827,19 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     def reset_for_new_run():
         return (
             "",           # text_in
+            None,         # audio_upload
             None,         # audio_in
+            gr.update(visible=False), # audio_preview
+            None,         # video_upload
             None,         # video_in
+            gr.update(visible=False), # video_preview
             None,         # out_plot
             "*Run a brain mapping to see an engagement scorecard with grades, scores, and actionable recommendations.*",  # out_analysis
         )
 
     new_run_btn.click(
         fn=reset_for_new_run,
-        outputs=[text_in, audio_in, video_in, out_plot, out_analysis]
+        outputs=[text_in, audio_upload, audio_in, audio_preview, video_upload, video_in, video_preview, out_plot, out_analysis]
     )
 
     # Wire up brain mapping — chain dropdown refresh after completion
