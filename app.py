@@ -630,22 +630,20 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     progress((0.75, 1.0), desc="Rendering 3D Brain Mesh...")
     n_to_plot = min(len(preds), 4)
     sliced_preds = preds[:n_to_plot]
-    fig = plotter.plot_timesteps(sliced_preds, show_stimuli=False)
+    views_seq = ["left", "right", "dorsal", "anterior"]
+    fig = plotter.plot_timesteps(sliced_preds, show_stimuli=False, views=views_seq[:n_to_plot])
     
     # Annotate each brain map with descriptive labels
     n_vertices = preds.shape[1] if preds.ndim == 2 else (preds.shape[1] if len(preds.shape) > 1 else 0)
     if n_vertices > 0:
         for i in range(n_to_plot):
-            label = _get_timestep_label(sliced_preds[i], n_vertices)
-            # Position annotation below each brain subplot
-            x_pos = (i + 0.5) / n_to_plot
-            fig.text(
-                x_pos, 0.01, label,
-                ha="center", va="bottom",
-                fontsize=8, fontstyle="italic",
-                color="#666666",
-                transform=fig.transFigure
-            )
+            base_label = _get_timestep_label(sliced_preds[i], n_vertices)
+            raw_act = float(np.mean(np.abs(sliced_preds[i])))
+            label = f"{base_label}\nAct: {raw_act * 100:.1f}%"
+            
+            # Position natively above each subplot to prevent transFigure overlaps
+            if i < len(fig.axes):
+                fig.axes[i].set_title(label, fontsize=10, fontstyle="italic", color="#999999", pad=10)
     
     progress((0.9, 1.0), desc="Analyzing Brain Activation Patterns...")
     interpretation, region_data = analyze_brain_regions(preds, stimulus_desc)

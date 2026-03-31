@@ -253,7 +253,7 @@ class BasePlotBrain(pydantic.BaseModel):
         TEXT_KEY, SOUND_KEY, VIDEO_KEY = "Text", "Audio", "Video"
 
         if isinstance(neuro, np.ndarray):
-            neuro = {"Brain reponse": neuro}
+            neuro = {"Brain response": neuro}
         assert all(
             v.ndim == 2 for v in neuro.values()
         ), "Neuro must be a dictionary of 2D arrays"
@@ -318,10 +318,14 @@ class BasePlotBrain(pydantic.BaseModel):
 
         for i in tqdm(range(n_timesteps), desc="Plotting..."):
             for j, (key, value) in enumerate(neuro.items()):
+                current_view = views[key] if isinstance(views, dict) else views
+                if isinstance(current_view, list) and len(current_view) > i:
+                    current_view = current_view[i]
+                
                 self.plot_surf(
                     value[i],
                     axes=axes[f"{key}_{i}"],
-                    views=views[key] if isinstance(views, dict) else views,
+                    views=current_view,
                     **kwargs,
                 )
                 if j == len(neuro) - 1:
