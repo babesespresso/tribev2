@@ -16,6 +16,7 @@ spacy
 soundfile
 Levenshtein
 uv
+fpdf2>=2.8.2
 
 # Plotting & brain rendering
 matplotlib>=3.10

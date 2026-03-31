@@ -49,7 +49,41 @@ def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data):
     with open(run_dir / "meta.json", "w") as f:
         json.dump(meta, f, indent=2, default=str)
     
-    return run_id
+    # Add basic PDF Generation
+    pdf_path_str = None
+    try:
+        from fpdf import FPDF
+        import re
+
+        class PDFReport(FPDF):
+            def header(self):
+                self.set_font('Helvetica', 'B', 15)
+                self.cell(0, 10, 'TRIBE v2 Brain Encoding Analysis', ln=1, align='C')
+                self.set_font('Helvetica', 'I', 10)
+                self.cell(0, 5, 'MULTITUDE MEDIA | Cognitive Impact Report', ln=1, align='C')
+                self.ln(10)
+
+        pdf = PDFReport()
+        pdf.add_page()
+        
+        # Add the brain map image roughly centered
+        pdf.image(str(plot_path), x=10, y=30, w=190)
+        
+        pdf.set_y(150)
+        
+        # Filter markdown hashes and asterisks for pure text support in Helvetica
+        clean_text = re.sub(r'[*#]', '', analysis)
+        
+        pdf.set_font('Helvetica', '', 11)
+        pdf.multi_cell(0, 6, clean_text)
+        
+        pdf_path = run_dir / "report.pdf"
+        pdf.output(str(pdf_path))
+        pdf_path_str = str(pdf_path)
+    except Exception as e:
+        print(f"Failed to generate PDF: {e}")
+        
+    return run_id, pdf_path_str
 
 def load_all_runs():
     """Load all saved runs, newest first."""
@@ -87,27 +121,29 @@ def view_run(choice_str):
     """Load a specific run's plot and analysis."""
     run_id = _extract_run_id(choice_str)
     if not run_id:
-        return None, "*Select a run from the dropdown above.*"
+        return None, "*Select a run from the dropdown above.*", gr.update(visible=False)
     run_dir = RUNS_DIR / run_id
     meta_path = run_dir / "meta.json"
     plot_path = run_dir / "brain_map.png"
     if not meta_path.exists():
-        return None, f"Run `{run_id}` not found."
+        return None, f"Run `{run_id}` not found.", gr.update(visible=False)
     with open(meta_path) as f:
         meta = json.load(f)
     img = str(plot_path) if plot_path.exists() else None
-    return img, meta.get("analysis", "No analysis available.")
+    pdf_path = run_dir / "report.pdf"
+    pdf_str = str(pdf_path) if pdf_path.exists() else None
+    return img, meta.get("analysis", "No analysis available."), gr.update(value=pdf_str, visible=bool(pdf_str))
 
 def delete_run(choice_str):
     """Delete a run from history."""
     run_id = _extract_run_id(choice_str)
     if not run_id:
-        return gr.update(choices=get_history_choices(), value=None), None, "*No run selected.*"
+        return gr.update(choices=get_history_choices(), value=None), None, "*No run selected.*", gr.update(visible=False)
     import shutil
     run_dir = RUNS_DIR / run_id
     if run_dir.exists():
         shutil.rmtree(run_dir)
-    return gr.update(choices=get_history_choices(), value=None), None, "*Run deleted.*"
+    return gr.update(choices=get_history_choices(), value=None), None, "*Run deleted.*", gr.update(visible=False)
 
 model = None
 plotter = PlotBrain(mesh="fsaverage5")
@@ -650,13 +686,14 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     
     # Persist the run
     progress((0.95, 1.0), desc="Saving run to history...")
+    pdf_path = None
     try:
-        save_run(stimulus_type, stimulus_desc, fig, interpretation, region_data)
+        _, pdf_path = save_run(stimulus_type, stimulus_desc, fig, interpretation, region_data)
     except Exception as e:
         print(f"[Run History] Failed to save: {e}")
     
     progress((1.0, 1.0), desc="Complete")
-    return fig, interpretation
+    return fig, interpretation, gr.update(value=pdf_path, visible=bool(pdf_path))
 
 
 @spaces.GPU(duration=180)
@@ -748,6 +785,21 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     </div>
     """)
     
+    with gr.Accordion("Understanding Brain Encoding Analysis (Click to expand)", open=False):
+        gr.Markdown("""
+### 1. Identifying the Cognitive Hook
+By mapping the video frame-by-frame, the AI calculates which specific regions of the cortex light up:
+* **Visual & Auditory:** Are the visuals striking? Is the sound design stimulating? 
+* **Language & Executive:** Is the audience actively processing your words and thinking about your message, or are they passively watching?
+* **Emotion:** Is the speaker's delivery lighting up the emotional processing centers of the brain?
+
+### 2. Time-Series Engagement Drops
+By breaking the video down across the timestamps, you can see exactly where the brain 'tunes out' or where activation suddenly spikes. If your introduction is meant to be a high-energy hook, but the `Act: %` (Activation) remains flat for the first few seconds, the composition isn't as stimulating as you thought. 
+
+### 3. Actionable Content Adjustments
+The **Content Engagement Scorecard** takes these raw structural brain maps and synthesizes them into grades. For example, if the analysis heavily features the **Visual** cortex but low **Executive** function, it may recommend tightening your script because the audience is engaged visually but isn't following your logical argument. 
+        """)
+
     with gr.Row():
         with gr.Column(scale=4):
             with gr.Tabs():
@@ -790,6 +842,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     gr.Markdown("---")
     gr.Markdown("### Content Engagement Scorecard")
     out_analysis = gr.Markdown(value="*Run a brain mapping to see an engagement scorecard with grades, scores, and actionable recommendations.*")
+    out_pdf = gr.DownloadButton("Download PDF Report", visible=False)
 
     # --- Run History Section ---
     gr.HTML("""
@@ -816,6 +869,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
 
     history_image = gr.Image(label="Brain Map", show_label=False, type="filepath")
     history_analysis = gr.Markdown(value="*Select a run from the dropdown above.*")
+    history_pdf = gr.DownloadButton("Download PDF Report", visible=False)
 
     # Helper to refresh dropdown after a run completes
     def refresh_history():
@@ -833,21 +887,22 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
             gr.update(visible=False), # video_preview
             None,         # out_plot
             "*Run a brain mapping to see an engagement scorecard with grades, scores, and actionable recommendations.*",  # out_analysis
+            gr.update(visible=False), # out_pdf
         )
 
     new_run_btn.click(
         fn=reset_for_new_run,
-        outputs=[text_in, audio_upload, audio_in, audio_preview, video_upload, video_in, video_preview, out_plot, out_analysis]
+        outputs=[text_in, audio_upload, audio_in, audio_preview, video_upload, video_in, video_preview, out_plot, out_analysis, out_pdf]
     )
 
     # Wire up brain mapping — chain dropdown refresh after completion
-    text_btn.click(fn=process_text, inputs=text_in, outputs=[out_plot, out_analysis]).then(
+    text_btn.click(fn=process_text, inputs=text_in, outputs=[out_plot, out_analysis, out_pdf]).then(
         fn=refresh_history, outputs=history_dropdown
     )
-    audio_btn.click(fn=process_audio, inputs=audio_in, outputs=[out_plot, out_analysis]).then(
+    audio_btn.click(fn=process_audio, inputs=audio_in, outputs=[out_plot, out_analysis, out_pdf]).then(
         fn=refresh_history, outputs=history_dropdown
     )
-    video_btn.click(fn=process_video, inputs=video_in, outputs=[out_plot, out_analysis]).then(
+    video_btn.click(fn=process_video, inputs=video_in, outputs=[out_plot, out_analysis, out_pdf]).then(
         fn=refresh_history, outputs=history_dropdown
     )
 
@@ -855,7 +910,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     history_dropdown.change(
         fn=view_run,
         inputs=history_dropdown,
-        outputs=[history_image, history_analysis]
+        outputs=[history_image, history_analysis, history_pdf]
     )
     refresh_btn.click(
         fn=refresh_history,
@@ -864,7 +919,7 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     delete_btn.click(
         fn=delete_run,
         inputs=history_dropdown,
-        outputs=[history_dropdown, history_image, history_analysis]
+        outputs=[history_dropdown, history_image, history_analysis, history_pdf]
     )
 
     # Force-load history on page open
