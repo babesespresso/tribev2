@@ -332,41 +332,37 @@ class BasePlotBrain(pydantic.BaseModel):
                     title = (
                         f"t={timestamps[i]}s" if timestamps is not None else f"t={i}s"
                     )
-                    fig.text(
-                        0.5,
-                        -0.1,
-                        title,
-                        transform=axes[f"{key}_{i}"].transAxes,
-                        ha="center",
-                        va="center",
-                    )
-
+                    axes[f"{key}_{i}"].set_title(title, pad=15)
+                    
         if show_stimuli:
             self.plot_stimuli(
                 segments, axes, plot_every_k_timesteps=plot_every_k_timesteps
             )
 
-        first_neuro_keys = [key + "_0" for key in list(neuro.keys())]
-        left, full_width = (
-            axes[first_neuro_keys[0]].get_position().x0,
-            fig.get_figwidth(),
-        )
-        for key, label in zip(
-            first_neuro_keys + [TEXT_KEY, SOUND_KEY, f"{VIDEO_KEY}_0"],
-            list(neuro.keys()) + [TEXT_KEY, SOUND_KEY, VIDEO_KEY],
-        ):
-            if key not in axes:
-                continue
-            pos = axes[key].get_position()
-            fig.text(
-                left,
-                (pos.y0 + pos.y1) / 2,
-                label + "\n\n\n",
-                rotation="vertical",
-                va="center",
-                ha="center",
-                transform=fig.transFigure,
+        # Only add vertical row labels when stimuli rows are visible
+        # (they help differentiate brain vs text vs audio rows)
+        if show_stimuli:
+            first_neuro_keys = [key + "_0" for key in list(neuro.keys())]
+            left, full_width = (
+                axes[first_neuro_keys[0]].get_position().x0,
+                fig.get_figwidth(),
             )
+            for key, label in zip(
+                first_neuro_keys + [TEXT_KEY, SOUND_KEY, f"{VIDEO_KEY}_0"],
+                list(neuro.keys()) + [TEXT_KEY, SOUND_KEY, VIDEO_KEY],
+            ):
+                if key not in axes:
+                    continue
+                pos = axes[key].get_position()
+                fig.text(
+                    left - 0.05,
+                    (pos.y0 + pos.y1) / 2,
+                    label,
+                    rotation="vertical",
+                    va="center",
+                    ha="center",
+                    transform=fig.transFigure,
+                )
         return fig
 
     @staticmethod

@@ -11,6 +11,16 @@ from tribev2.plotting import PlotBrainNilearn as PlotBrain
 import tempfile
 import threading
 import matplotlib
+import multiprocessing
+
+# Maximize PyTorch CPU threading for CPU-bound video extraction
+# (MacOS defaults to limiting PyTorch to 4 threads dynamically)
+try:
+    cpu_cores = multiprocessing.cpu_count()
+    torch.set_num_threads(cpu_cores)
+    print(f"PyTorch CPU threads uncapped to {cpu_cores}")
+except Exception as e:
+    print(f"Could not uncap PyTorch threads: {e}")
 
 try:
     import spaces
@@ -58,9 +68,9 @@ def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data):
         class PDFReport(FPDF):
             def header(self):
                 self.set_font('Helvetica', 'B', 15)
-                self.cell(0, 10, 'TRIBE v2 Brain Encoding Analysis', ln=1, align='C')
+                self.cell(0, 10, 'TRIBE v2 Brain Encoding Analysis', new_x="LMARGIN", new_y="NEXT", align='C')
                 self.set_font('Helvetica', 'I', 10)
-                self.cell(0, 5, 'MULTITUDE MEDIA | Cognitive Impact Report', ln=1, align='C')
+                self.cell(0, 5, 'MULTITUDE MEDIA | Cognitive Impact Report', new_x="LMARGIN", new_y="NEXT", align='C')
                 self.ln(10)
 
         pdf = PDFReport()
@@ -73,13 +83,15 @@ def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data):
         
         # Filter markdown hashes and asterisks for pure text support in Helvetica
         clean_text = re.sub(r'[*#]', '', analysis)
+        # Strip all emojis and non-ascii characters to prevent fpdf font crashes
+        clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
         
         pdf.set_font('Helvetica', '', 11)
         pdf.multi_cell(0, 6, clean_text)
         
         pdf_path = run_dir / "report.pdf"
         pdf.output(str(pdf_path))
-        pdf_path_str = str(pdf_path)
+        pdf_path_str = str(pdf_path.absolute())
     except Exception as e:
         print(f"Failed to generate PDF: {e}")
         
@@ -117,6 +129,12 @@ def _extract_run_id(choice_str):
         return choice_str.split("]")[0][1:]
     return choice_str
 
+def create_pdf_button_html(pdf_path_str):
+    if not pdf_path_str: return gr.update(visible=False)
+    # Passed directly to gr.DownloadButton which natively resolves the UUID caching bug 
+    return gr.update(value=pdf_path_str, visible=True)
+
+
 def view_run(choice_str):
     """Load a specific run's plot and analysis."""
     run_id = _extract_run_id(choice_str)
@@ -131,8 +149,8 @@ def view_run(choice_str):
         meta = json.load(f)
     img = str(plot_path) if plot_path.exists() else None
     pdf_path = run_dir / "report.pdf"
-    pdf_str = str(pdf_path) if pdf_path.exists() else None
-    return img, meta.get("analysis", "No analysis available."), gr.update(value=pdf_str, visible=bool(pdf_str))
+    pdf_str = str(pdf_path.absolute()) if pdf_path.exists() else None
+    return img, meta.get("analysis", "No analysis available."), create_pdf_button_html(pdf_str)
 
 def delete_run(choice_str):
     """Delete a run from history."""
@@ -240,21 +258,17 @@ def get_model():
     global model
     with model_lock:
         if model is None:
-            use_mps = torch.backends.mps.is_available()
-            label = "mps (Apple GPU)" if use_mps else "cpu"
-            print(f"Loading TRIBE v2 model... text extractor → {label}, others → cpu")
+            print(f"Loading TRIBE v2 model... all extractors → cpu")
             model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
-            if not torch.cuda.is_available():
-                for attr in ["neuro", "audio_feature", "video_feature", "image_feature"]:
-                    extractor = getattr(model.data, attr, None)
-                    if extractor is not None:
-                        if hasattr(extractor, "device"):
-                            extractor.device = "cpu"
-                        if hasattr(extractor, "image") and hasattr(extractor.image, "device"):
-                            extractor.image.device = "cpu"
-                text_ext = getattr(model.data, "text_feature", None)
-                if text_ext is not None and hasattr(text_ext, "device"):
-                    text_ext.device = "mps" if use_mps else "cpu"
+            # Force ALL extractors to CPU — MPS crashes on this model's
+            # attention layers (incompatible matmul dimensions 24 vs 8 heads)
+            for attr in ["neuro", "audio_feature", "video_feature", "image_feature", "text_feature"]:
+                extractor = getattr(model.data, attr, None)
+                if extractor is not None:
+                    if hasattr(extractor, "device"):
+                        extractor.device = "cpu"
+                    if hasattr(extractor, "image") and hasattr(extractor.image, "device"):
+                        extractor.image.device = "cpu"
             print("Model loaded successfully.")
     return model
 
@@ -576,34 +590,36 @@ def _generate_full_scorecard(data, stimulus_description):
             elif "Executive" in weak_cat:
                 report += "Low executive activation — content is **passively consumed**. "
     
-    # --- RECOMMENDATIONS ---
-    report += "\n\n### Recommendations\n\n"
-    
+    # --- AI STRATEGIC ACTION PLAN ---
+    report += "\n\n### 💡 AI Strategic Action Plan\n\n"
+    report += "Based on your neural encoding profile, here is exactly how to optimize this content for higher engagement:\n\n"
     recs = []
-    if emotion_score < 60:
-        recs.append("🎭 **Boost emotional impact** — add personal stories, conflict, music, or facial close-ups")
-    if visual_score < 60:
-        recs.append("🎨 **Strengthen visuals** — add motion, faces, high-contrast imagery, or text overlays")
-    if auditory_score < 60:
-        recs.append("🔊 **Improve audio** — clearer speech, vocal variety, background scoring, or sound effects")
-    if attention_score < 60:
-        recs.append("🎯 **Add attention hooks** — faster cuts, direct eye contact, questions, or scene changes every 3-5s")
-    if watch_through < 50:
-        recs.append(f"⏱️ **Shorten to ~{optimal_length}s** — attention decays rapidly; front-load your key message")
-    if purchase_intent < 40:
-        recs.append("💰 **Add a clear call to action** — the content lacks the emotional+cognitive push to drive behavior")
-    if virality > 75:
-        recs.append("🚀 **High share potential** — prioritize social distribution; this content has organic spread characteristics")
-    if overall >= 80:
-        recs.append("✅ **Strong overall** — candidate for broad distribution and paid amplification")
-    if cog_load > 85:
-        recs.append("⚠️ **High cognitive load** — content may overwhelm; simplify messaging or slow pacing")
     
+    if emotion_score < 60:
+        recs.append("**Elevate Emotional Resonance:** Your emotional activation is lagging. Introduce a human element earlier (faces, eyes), raise the stakes with a clear conflict or problem-statement, and consider using a subtle background music track that swells during key points.")
+    if visual_score < 60:
+        recs.append("**Stimulate the Visual Cortex:** The brain is not actively tracking your visuals. Break visual monotony by changing camera angles every 3-5 seconds, adding dynamic text overlays (B-roll, captions), or ensuring high color contrast in your framing.")
+    if auditory_score < 60:
+        recs.append("**Enhance Auditory Processing:** The auditory cortex is under-stimulated. Use vocal intonation and pacing shifts to emphasize important words. Eliminate background noise and consider subtle sound effects (whooshes, pops) during visual transitions.")
+    if attention_score < 60:
+        recs.append("**Command Focused Attention:** Viewers are passively watching. Force active attention by breaking the fourth wall (direct eye contact), asking a rhetorical question, or using a 'pattern interrupt' (a sudden visual/audio shift) in the first 3 seconds.")
+    if executive_score < 60:
+        recs.append("**Trigger Deep Thinking:** The content is being consumed too passively. Challenge the viewer's assumptions, present a surprising statistic, or frame your message as a 'secret' or 'counter-intuitive truth' to force the executive network to engage.")
+        
+    if watch_through < 50:
+        recs.append(f"**Combat Attention Decay:** Our models predict high drop-off. Cut this content down to ~{optimal_length}s. Front-load your absolute strongest hook into the first 2 seconds, and ruthlessly cut any 'fluff' or slow introductions.")
+    if purchase_intent < 40:
+        recs.append("**Drive Action Intent:** To push the brain from 'watching' to 'acting', you must explicitly state what the user should do next. Pair a clear, urgent Call-To-Action (CTA) with a visual of the desired outcome.")
+    if virality > 75:
+        recs.append("**Capitalize on Virality:** This content already exhibits high organic shareability signatures. Do not put this behind a paywall—use it as top-of-funnel content optimized for TikTok, Reels, and Shorts algorithms.")
+    elif virality < 40:
+        recs.append("**Engineer Shareability:** To make this spread organically, it needs a higher 'Social Currency' trigger. Frame the core message as something the viewer would look smart for sharing with a friend.")
+
     if not recs:
-        recs.append("📊 Content is performing adequately — consider A/B testing variations to optimize further")
+        recs.append("**Scale and Distribute:** Your neural engagement is exceptionally well-balanced. Do not change the core creative. Lock this in for A/B testing on paid ad campaigns to find the best audience match.")
     
     for i, rec in enumerate(recs, 1):
-        report += f"{i}. {rec}\n"
+        report += f"{i}. {rec}\n\n"
     
     # --- BOTTOM LINE ---
     report += "\n### Bottom Line\n\n"
@@ -619,72 +635,82 @@ def _generate_full_scorecard(data, stimulus_description):
     return report
 
 
-def _get_timestep_label(pred_slice, n_vertices):
-    """Compute dominant brain region for a single timestep and return a short label."""
-    half = n_vertices // 2
-    zones = {
-        "Visual": list(range(0, int(half * 0.15))) + list(range(half, half + int(half * 0.15))),
-        "Language": list(range(int(half * 0.15), int(half * 0.35))) + list(range(half + int(half * 0.15), half + int(half * 0.35))),
-        "Attention": list(range(int(half * 0.35), int(half * 0.55))) + list(range(half + int(half * 0.35), half + int(half * 0.55))),
-        "Executive": list(range(int(half * 0.55), int(half * 0.80))) + list(range(half + int(half * 0.55), half + int(half * 0.80))),
-        "Emotion": list(range(int(half * 0.80), half)) + list(range(half + int(half * 0.80), n_vertices)),
-    }
-    zone_scores = {}
-    for name, indices in zones.items():
-        valid = [i for i in indices if i < n_vertices]
-        if valid:
-            zone_scores[name] = float(np.mean(np.abs(pred_slice[valid])))
-    
-    sorted_zones = sorted(zone_scores.items(), key=lambda x: x[1], reverse=True)
-    top = sorted_zones[0][0] if sorted_zones else "Mixed"
-    second = sorted_zones[1][0] if len(sorted_zones) > 1 else ""
-    
-    engagement = float(np.mean(np.abs(pred_slice)))
-    
-    # Short descriptive labels
-    descriptions = {
-        "Visual": "Eyes processing imagery",
-        "Language": "Speech/words landing",
-        "Attention": "Focus locked in",
-        "Executive": "Active thinking",
-        "Emotion": "Emotional response",
-    }
-    
-    label = descriptions.get(top, top)
-    if second and zone_scores.get(second, 0) > zone_scores[top] * 0.8:
-        label += f" + {second.lower()}"
-    
-    return label
+# Each view angle reveals different brain systems — give unique, meaningful labels
+VIEW_LABELS = {
+    "left":     ("Left Hemisphere",  "Language, speech, and analytical processing"),
+    "right":    ("Right Hemisphere", "Creativity, emotion, and spatial awareness"),
+    "dorsal":   ("Top-Down View",    "Motor planning, attention, and focus"),
+    "anterior": ("Front View",       "Decision-making, social cognition, and impulse control"),
+    "posterior":("Rear View",        "Visual processing and sensory integration"),
+    "ventral":  ("Bottom View",      "Object recognition and face processing"),
+}
 
 
 def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc=""):
-    """Generate brain plot AND AI analysis, then persist the run."""
+    """Generate vertical brain plot AND AI analysis, then persist the run."""
+    import matplotlib.pyplot as plt
+    from tribev2.plotting.utils import robust_normalize
+    
     progress((0.4, 1.0), desc="Extracting Deep Multimodal AI Features (Heaviest Step)...")
     m = get_model()
     preds, segments = m.predict(events=df, gradio_progress=progress)
     
-    progress((0.75, 1.0), desc="Rendering 3D Brain Mesh...")
+    progress((0.75, 1.0), desc="Rendering 3D Brain Mesh (Vertical Layout)...")
     n_to_plot = min(len(preds), 4)
     sliced_preds = preds[:n_to_plot]
     views_seq = ["left", "right", "dorsal", "anterior"]
-    fig = plotter.plot_timesteps(sliced_preds, show_stimuli=False, views=views_seq[:n_to_plot])
     
-    # Annotate each brain map with descriptive labels
-    n_vertices = preds.shape[1] if preds.ndim == 2 else (preds.shape[1] if len(preds.shape) > 1 else 0)
-    if n_vertices > 0:
-        for i in range(n_to_plot):
-            base_label = _get_timestep_label(sliced_preds[i], n_vertices)
-            raw_act = float(np.mean(np.abs(sliced_preds[i])))
-            label = f"{base_label}\nAct: {raw_act * 100:.1f}%"
-            
-            # Position natively above each subplot to prevent transFigure overlaps
-            if i < len(fig.axes):
-                fig.axes[i].set_title(label, fontsize=10, fontstyle="italic", color="#999999", pad=10)
+    # Normalize data globally for consistent colorbar
+    norm_preds = [robust_normalize(p, percentile=95) for p in sliced_preds]
     
+    import textwrap
+    import matplotlib.gridspec as gridspec
+    
+    fig = plt.figure(figsize=(10, 3.5 * n_to_plot))
+    fig.patch.set_facecolor('#09090b')
+    gs = gridspec.GridSpec(n_to_plot, 2, width_ratios=[1, 1.2], figure=fig)
+    
+    sm = None
+    for i in range(n_to_plot):
+        view_name = views_seq[i]
+        view_title, view_desc = VIEW_LABELS.get(view_name, ("Brain View", "Neural activation"))
+        raw_act = float(np.mean(np.abs(sliced_preds[i])))
+        
+        # Wrap the description text so it doesn't bleed off the edge of the figure
+        wrapped_desc = textwrap.fill(view_desc, width=45)
+        
+        # Brain plot on the left
+        ax_brain = fig.add_subplot(gs[i, 0], projection="3d")
+        ax_brain.set_facecolor('#09090b')
+        
+        sm = plotter.plot_surf(
+            norm_preds[i],
+            views=view_name,
+            axes=[ax_brain], 
+            colorbar=False,
+            cmap="hot"
+        )
+        
+        # Text on the right
+        ax_text = fig.add_subplot(gs[i, 1])
+        ax_text.axis("off")
+        ax_text.set_facecolor('#09090b')
+        label_text = f"{view_title}\n\n{wrapped_desc}\n\nActivation: {raw_act * 100:.1f}%"
+        ax_text.text(0.1, 0.5, label_text, fontsize=13, color="#e4e4e7", va="center", ha="left", wrap=True)
+
+    # Add a global colorbar at the bottom
+    cbar_ax = fig.add_axes([0.15, 0.05, 0.25, 0.02])
+    cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
+    cbar.set_label("Relative Activation Intensity", color="#a1a1aa", fontsize=10)
+    cbar.ax.tick_params(colors="#a1a1aa", labelsize=9)
+    # remove ticks
+    cbar.set_ticks([])
+    
+    fig.subplots_adjust(top=0.95, bottom=0.12, wspace=0.1, hspace=0.1)
+
     progress((0.9, 1.0), desc="Analyzing Brain Activation Patterns...")
     interpretation, region_data = analyze_brain_regions(preds, stimulus_desc)
     
-    # Persist the run
     progress((0.95, 1.0), desc="Saving run to history...")
     pdf_path = None
     try:
@@ -693,7 +719,7 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
         print(f"[Run History] Failed to save: {e}")
     
     progress((1.0, 1.0), desc="Complete")
-    return fig, interpretation, gr.update(value=pdf_path, visible=bool(pdf_path))
+    return fig, interpretation, create_pdf_button_html(str(pdf_path) if pdf_path else None)
 
 
 @spaces.GPU(duration=180)
@@ -734,11 +760,11 @@ def process_video(video_path, progress=gr.Progress()):
     
     ext = os.path.splitext(video_path)[1]
     trimmed_path = video_path.replace(ext, f"_trimmed{ext}")
-    os.system(f'ffmpeg -y -i "{video_path}" -t 5 -c copy "{trimmed_path}" -loglevel quiet')
+    os.system(f'ffmpeg -y -i "{video_path}" -t 3 "{trimmed_path}" -loglevel quiet')
     
     progress((0.15, 1.0), desc="Extracting Video Motion & Semantics via V-JEPA2...")
     df = get_model().get_events_dataframe(video_path=trimmed_path)
-    return generate_plot_and_analysis(df, progress, stimulus_type="Video", stimulus_desc="Video clip (first 5 seconds)")
+    return generate_plot_and_analysis(df, progress, stimulus_type="Video", stimulus_desc="Video clip (first 3 seconds)")
 
 
 # --- Custom Theme & Modern Black Dashboard Styling ---
@@ -748,6 +774,8 @@ custom_theme = gr.themes.Base(
     neutral_hue="zinc",
     font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"]
 ).set(
+    background_fill_primary="#000000",
+    background_fill_secondary="#09090b",
     body_background_fill="#000000",
     body_text_color="#f4f4f5",
     block_background_fill="#09090b",
@@ -785,19 +813,22 @@ with gr.Blocks(title="MULTITUDE MEDIA | TRIBE v2", theme=custom_theme) as app:
     </div>
     """)
     
-    with gr.Accordion("Understanding Brain Encoding Analysis (Click to expand)", open=False):
+    with gr.Accordion("📚 How to Read Your Analysis & Grades (Click to expand)", open=False):
         gr.Markdown("""
-### 1. Identifying the Cognitive Hook
-By mapping the video frame-by-frame, the AI calculates which specific regions of the cortex light up:
-* **Visual & Auditory:** Are the visuals striking? Is the sound design stimulating? 
-* **Language & Executive:** Is the audience actively processing your words and thinking about your message, or are they passively watching?
-* **Emotion:** Is the speaker's delivery lighting up the emotional processing centers of the brain?
+### 🎯 What Your Score Means
+The **Overall Neural Engagement Score (0-100)** displays how strongly your content grips the human brain. A higher score means audiences are organically locked in, feeling emotion, and actively paying attention.
 
-### 2. Time-Series Engagement Drops
-By breaking the video down across the timestamps, you can see exactly where the brain 'tunes out' or where activation suddenly spikes. If your introduction is meant to be a high-energy hook, but the `Act: %` (Activation) remains flat for the first few seconds, the composition isn't as stimulating as you thought. 
+### 📊 The 5 Grading Categories
+We grade your content across distinct cognitive systems. To get better engagement, look at your weakest grade and adjust your content:
+* **🗣️ Auditory & Language:** Processing speech and words. *To improve:* Speak clearly, use strong vocabulary, or add sound effects.
+* **👀 Visual Processing:** Processing faces, motion, and color. *To improve:* Add more dynamic fast edits, bold text overlays, or expressive facial close-ups.
+* **⏱️ Attention & Spatial:** Focusing on the screen without losing interest. *To improve:* Add cuts or slight camera movements every 3-5 seconds.
+* **🧠 Executive & Deep Thinking:** Processing complex ideas or logic. *To improve:* Ask questions or introduce a "hook", mystery, or puzzle early.
+* **❤️ Emotion & Decision:** Feeling empathy, excitement, or trust. *To improve:* Tell a personal story, use strong emotional delivery, and build a cohesive narrative.
 
-### 3. Actionable Content Adjustments
-The **Content Engagement Scorecard** takes these raw structural brain maps and synthesizes them into grades. For example, if the analysis heavily features the **Visual** cortex but low **Executive** function, it may recommend tightening your script because the audience is engaged visually but isn't following your logical argument. 
+### 🧠 How to Read the 3D Brain Maps
+The 3D glowing brains show *exactly* when and where the human brain activated during your video, audio, or text. 
+Above each brain, our AI notes the precise cognitive system being engaged at that second (e.g., "👀 Processing Visuals"), alongside the raw Activation `%`. If activation drops in the middle of your video, you are likely losing the viewer's attention.
         """)
 
     with gr.Row():
@@ -822,7 +853,7 @@ The **Content Engagement Scorecard** takes these raw structural brain maps and s
                     audio_upload.change(process_audio_upload, inputs=audio_upload, outputs=[audio_in, audio_preview])
                     
                 with gr.Tab("Video Inference"):
-                    gr.Markdown("Upload standard video formats. Auto-trimmed to 5 seconds.")
+                    gr.Markdown("Upload standard video formats. Auto-trimmed to 3 seconds.")
                     video_upload = gr.File(label="Upload Video File", file_types=["video"])
                     video_preview = gr.Video(label="Preview", interactive=False, visible=False)
                     video_in = gr.State()
@@ -840,9 +871,10 @@ The **Content Engagement Scorecard** takes these raw structural brain maps and s
             out_plot = gr.Plot(label="", show_label=False)
 
     gr.Markdown("---")
-    gr.Markdown("### Content Engagement Scorecard")
+    with gr.Row():
+        gr.Markdown("### Content Engagement Scorecard")
     out_analysis = gr.Markdown(value="*Run a brain mapping to see an engagement scorecard with grades, scores, and actionable recommendations.*")
-    out_pdf = gr.DownloadButton("Download PDF Report", visible=False)
+    out_pdf = gr.DownloadButton("⬇ Download PDF Report", visible=False, variant="secondary", size="lg")
 
     # --- Run History Section ---
     gr.HTML("""
@@ -869,7 +901,7 @@ The **Content Engagement Scorecard** takes these raw structural brain maps and s
 
     history_image = gr.Image(label="Brain Map", show_label=False, type="filepath")
     history_analysis = gr.Markdown(value="*Select a run from the dropdown above.*")
-    history_pdf = gr.DownloadButton("Download PDF Report", visible=False)
+    history_pdf = gr.DownloadButton("⬇ Download PDF Report", visible=False, variant="secondary", size="lg")
 
     # Helper to refresh dropdown after a run completes
     def refresh_history():
@@ -926,4 +958,4 @@ The **Content Engagement Scorecard** takes these raw structural brain maps and s
     app.load(fn=refresh_history, outputs=history_dropdown)
 
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0", server_port=7860)
+    app.launch(server_name="0.0.0.0", server_port=7860, allowed_paths=[str(RUNS_DIR.absolute())])
