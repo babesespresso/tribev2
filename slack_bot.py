@@ -38,12 +38,11 @@ _processing_lock = threading.Lock()
 _processing_files: set[str] = set()
 
 # ── Slack Event Handlers ─────────────────────────────────────────────
-@slack_app.event("message")
-def handle_message(event, client):
-    """Process video files dropped into any channel the bot is in."""
+def _process_video_event(event, client):
+    """Core handler: extracts video files from any message event and forwards to Modal."""
     logger.info(f"Received message event: subtype={event.get('subtype')} user={event.get('user')}")
     
-    # Ignore bot messages (including our own uploads) - explicit check against bot_message
+    # Ignore bot messages (including our own uploads)
     if event.get("bot_id") or event.get("subtype") == "bot_message":
         logger.info("Ignoring bot message.")
         return
@@ -80,6 +79,23 @@ def handle_message(event, client):
             daemon=True,
         )
         t.start()
+
+# Register the handler for ALL message subtypes that can contain files:
+# - No subtype: plain drag-and-drop with no text
+# - "file_share": upload with accompanying text/emoji (e.g. 🔥)
+# - "message_changed": edited messages that add files
+@slack_app.event("message")
+def handle_message(event, client):
+    _process_video_event(event, client)
+
+@slack_app.event({"type": "message", "subtype": "file_share"})
+def handle_file_share_message(event, client):
+    _process_video_event(event, client)
+
+@slack_app.event({"type": "message", "subtype": "message_changed"})
+def handle_message_changed(event, client):
+    inner = event.get("message", event)
+    _process_video_event(inner, client)
 
 
 def _forward_video_to_modal(client, channel, thread_ts, file_info, filename, file_id):
