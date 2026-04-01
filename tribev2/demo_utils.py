@@ -74,8 +74,8 @@ def get_audio_and_text_events(
     """
     transforms = [
         ExtractAudioFromVideo(),
-        ChunkEvents(event_type_to_chunk="Audio", max_duration=60, min_duration=30),
-        ChunkEvents(event_type_to_chunk="Video", max_duration=60, min_duration=30),
+        ChunkEvents(event_type_to_chunk="Audio", max_duration=60, min_duration=1),
+        ChunkEvents(event_type_to_chunk="Video", max_duration=60, min_duration=1),
     ]
     if not audio_only:
         transforms.extend(

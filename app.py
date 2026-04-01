@@ -37,12 +37,22 @@ matplotlib.use('Agg')
 RUNS_DIR = Path("./runs")
 RUNS_DIR.mkdir(exist_ok=True)
 
-def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data):
-    """Persist a completed run to disk."""
+def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data, media_path=None):
+    """Persist a completed run to disk and generate a professional multi-page PDF."""
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = RUNS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     
+    # Extract snapshot
+    snapshot_path = None
+    if media_path and stimulus_type == "Video":
+        snapshot_path = run_dir / "snapshot.jpg"
+        import os
+        # Try capturing at 1s, fallback to frame 1
+        os.system(f'ffmpeg -y -i "{media_path}" -ss 00:00:01.000 -vframes 1 "{snapshot_path}" -loglevel quiet')
+        if not snapshot_path.exists():
+            os.system(f'ffmpeg -y -i "{media_path}" -vframes 1 "{snapshot_path}" -loglevel quiet')
+
     # Save the brain plot as PNG
     plot_path = run_dir / "brain_map.png"
     fig.savefig(str(plot_path), dpi=150, bbox_inches="tight", facecolor="#09090b")
@@ -59,40 +69,296 @@ def save_run(stimulus_type, stimulus_desc, fig, analysis, region_data):
     with open(run_dir / "meta.json", "w") as f:
         json.dump(meta, f, indent=2, default=str)
     
-    # Add basic PDF Generation
+    # --- Professional Multi-Page PDF Generation ---
     pdf_path_str = None
     try:
         from fpdf import FPDF
         import re
 
-        class PDFReport(FPDF):
-            def header(self):
-                self.set_font('Helvetica', 'B', 15)
-                self.cell(0, 10, 'TRIBE v2 Brain Encoding Analysis', new_x="LMARGIN", new_y="NEXT", align='C')
-                self.set_font('Helvetica', 'I', 10)
-                self.cell(0, 5, 'MULTITUDE MEDIA | Cognitive Impact Report', new_x="LMARGIN", new_y="NEXT", align='C')
-                self.ln(10)
+        # Color palette
+        BLACK = (9, 9, 11)
+        DARK_BG = (24, 24, 27)
+        CARD_BG = (39, 39, 42)
+        WHITE = (244, 244, 245)
+        MUTED = (161, 161, 170)
+        ACCENT = (99, 102, 241)  # indigo
+        
+        def grade_color(g):
+            if g.startswith('A'): return (34, 197, 94)   # green
+            if g.startswith('B'): return (59, 130, 246)  # blue
+            if g.startswith('C'): return (250, 204, 21)  # yellow
+            if g.startswith('D'): return (249, 115, 22)  # orange
+            return (239, 68, 68)                          # red / F
 
-        pdf = PDFReport()
+        def grade(s):
+            if s >= 90: return "A+"
+            if s >= 85: return "A"
+            if s >= 80: return "A-"
+            if s >= 75: return "B+"
+            if s >= 70: return "B"
+            if s >= 65: return "B-"
+            if s >= 60: return "C+"
+            if s >= 55: return "C"
+            if s >= 50: return "C-"
+            if s >= 40: return "D"
+            return "F"
+
+        class ScorecardPDF(FPDF):
+            def header(self):
+                self.set_fill_color(*BLACK)
+                self.rect(0, 0, 210, 297, 'F')
+                self.set_font('Helvetica', '', 8)
+                self.set_text_color(*MUTED)
+                self.set_y(8)
+                self.cell(0, 4, 'MULTITUDE MEDIA', align='L')
+                self.cell(0, 4, datetime.now().strftime('%B %d, %Y'), align='R')
+                self.ln(8)
+
+            def footer(self):
+                self.set_y(-12)
+                self.set_font('Helvetica', 'I', 7)
+                self.set_text_color(*MUTED)
+                self.cell(0, 5, f'TRIBE v2 Brain Encoding Report  |  Page {self.page_no()}', align='C')
+
+            def section_title(self, title):
+                if self.get_y() > 255:
+                    self.add_page()
+                self.ln(4)
+                self.set_font('Helvetica', 'B', 13)
+                self.set_text_color(*WHITE)
+                self.cell(0, 8, title, new_x="LMARGIN", new_y="NEXT")
+                self.set_draw_color(*ACCENT)
+                self.set_line_width(0.6)
+                self.line(10, self.get_y(), 100, self.get_y())
+                self.ln(4)
+
+            def safe_write(self, h, txt):
+                clean = txt.encode('ascii', 'ignore').decode('ascii')
+                self.write(h, clean)
+
+        pdf = ScorecardPDF()
+        pdf.set_auto_page_break(auto=True, margin=18)
         pdf.add_page()
-        
-        # Add the brain map image roughly centered
-        pdf.image(str(plot_path), x=10, y=30, w=190)
-        
-        pdf.set_y(150)
-        
-        # Filter markdown hashes and asterisks for pure text support in Helvetica
-        clean_text = re.sub(r'[*#]', '', analysis)
-        # Strip all emojis and non-ascii characters to prevent fpdf font crashes
-        clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
-        
-        pdf.set_font('Helvetica', '', 11)
-        pdf.multi_cell(0, 6, clean_text)
-        
+
+        # === PAGE 1: Title + Brain Map ===
+        pdf.set_font('Helvetica', 'B', 22)
+        pdf.set_text_color(*WHITE)
+        pdf.cell(0, 10, 'Content Engagement Scorecard', new_x="LMARGIN", new_y="NEXT", align='C')
+        pdf.set_font('Helvetica', '', 10)
+        pdf.set_text_color(*MUTED)
+        stim_clean = stimulus_desc.encode('ascii', 'ignore').decode('ascii') if stimulus_desc else 'Multimodal input'
+        pdf.cell(0, 6, f'Stimulus: {stim_clean}', new_x="LMARGIN", new_y="NEXT", align='C')
+        pdf.ln(6)
+
+        from PIL import Image as PILImage
+
+        # Video Snapshot (Optional)
+        if snapshot_path and snapshot_path.exists():
+            try:
+                with PILImage.open(str(snapshot_path)) as snap:
+                    s_w, s_h = snap.size
+                snap_w = 70
+                snap_h = snap_w * (s_h / s_w)
+                # Cap the snapshot height to prevent tall vertical videos from consuming the page
+                if snap_h > 60:
+                    snap_h = 60
+                    snap_w = snap_h * (s_w / s_h)
+                    
+                pdf.image(str(snapshot_path), x=(210 - snap_w) / 2, y=pdf.get_y(), w=snap_w, h=snap_h)
+                pdf.set_y(pdf.get_y() + snap_h + 6)
+            except Exception as e:
+                pass
+
+        # Brain map image — fit to width and let it flow
+        img_w = 180
+        from PIL import Image as PILImage
+        try:
+            with PILImage.open(str(plot_path)) as im:
+                w_px, h_px = im.size
+            img_h = img_w * (h_px / w_px)
+            # Cap height dynamically so it NEVER hits the footer (y=285)
+            max_img_h = 275 - pdf.get_y()
+            if img_h > max_img_h:
+                img_h = max_img_h
+                img_w = img_h * (w_px / h_px)
+        except Exception:
+            img_h = 120
+        pdf.image(str(plot_path), x=(210 - img_w) / 2, y=pdf.get_y(), w=img_w, h=img_h)
+        pdf.set_y(pdf.get_y() + img_h + 6)
+
+        # === Extract scores from the markdown analysis for PDF tables ===
+        scores_map = {}
+        grade_desc_map = {
+            "Auditory & Language": "Speech comprehension, voice impact, and word meaning",
+            "Visual Processing": "How strongly visuals capture attention (faces, motion, color)",
+            "Executive & Motor": "Active thinking, problem-solving, and action impulse",
+            "Attention & Spatial": "Sustained focus and spatial awareness engagement",
+            "Emotion & Decision": "Emotional resonance, trust, reward, and persuasion",
+        }
+        # Parse scores from the markdown table rows
+        for line in analysis.split('\n'):
+            for cat in grade_desc_map:
+                if cat in line and '/100' in line:
+                    m = re.search(r'(\d+)/100', line)
+                    if m:
+                        scores_map[cat] = int(m.group(1))
+        # Parse the overall score
+        overall_match = re.search(r'Overall Neural Engagement:\s*(\d+)/100', analysis)
+        overall_score = int(overall_match.group(1)) if overall_match else 0
+        overall_grade = grade(overall_score)
+
+        # === Overall Score Badge ===
+        if pdf.get_y() > 250:
+            pdf.add_page()
+        gc = grade_color(overall_grade)
+        pdf.set_fill_color(*gc)
+        badge_w = 60
+        badge_x = (210 - badge_w) / 2
+        pdf.set_xy(badge_x, pdf.get_y())
+        pdf.set_font('Helvetica', 'B', 18)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(badge_w, 12, f'{overall_score}/100  ({overall_grade})', align='C', fill=True)
+        pdf.ln(4)
+        pdf.set_font('Helvetica', '', 9)
+        pdf.set_text_color(*MUTED)
+        pdf.cell(0, 5, 'Overall Neural Engagement', align='C', new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(4)
+
+        # === PAGE 2+: Category Breakdown Table ===
+        pdf.section_title('Category Breakdown')
+        col_widths = [55, 18, 16, 101]
+        headers = ['Cognitive System', 'Score', 'Grade', 'What It Measures']
+        # Table header
+        pdf.set_fill_color(*CARD_BG)
+        pdf.set_font('Helvetica', 'B', 9)
+        pdf.set_text_color(*WHITE)
+        for i, h in enumerate(headers):
+            pdf.cell(col_widths[i], 7, h, border=0, fill=True)
+        pdf.ln()
+        # Table rows
+        pdf.set_font('Helvetica', '', 9)
+        row_toggle = False
+        for cat in ["Auditory & Language", "Visual Processing", "Executive & Motor", "Attention & Spatial", "Emotion & Decision"]:
+            s = scores_map.get(cat, 0)
+            g = grade(s)
+            desc = grade_desc_map.get(cat, '')
+            bg = DARK_BG if row_toggle else BLACK
+            pdf.set_fill_color(*bg)
+            pdf.set_text_color(*WHITE)
+            pdf.cell(col_widths[0], 7, cat, border=0, fill=True)
+            pdf.cell(col_widths[1], 7, f'{s}/100', border=0, fill=True)
+            gc2 = grade_color(g)
+            pdf.set_text_color(*gc2)
+            pdf.cell(col_widths[2], 7, g, border=0, fill=True)
+            pdf.set_text_color(*MUTED)
+            pdf.cell(col_widths[3], 7, desc, border=0, fill=True)
+            pdf.ln()
+            row_toggle = not row_toggle
+
+        # === Engagement Bars ===
+        pdf.section_title('Engagement Profile')
+        pdf.set_font('Helvetica', '', 9)
+        bar_max_w = 100
+        for cat in ["Auditory & Language", "Visual Processing", "Executive & Motor", "Attention & Spatial", "Emotion & Decision"]:
+            s = scores_map.get(cat, 0)
+            g = grade(s)
+            gc2 = grade_color(g)
+            if pdf.get_y() > 270:
+                pdf.add_page()
+            pdf.set_text_color(*WHITE)
+            pdf.cell(55, 6, cat, border=0)
+            # Draw bar background
+            bar_x = pdf.get_x()
+            bar_y = pdf.get_y() + 1
+            pdf.set_fill_color(*CARD_BG)
+            pdf.rect(bar_x, bar_y, bar_max_w, 4, 'F')
+            # Draw filled portion
+            fill_w = max(1, bar_max_w * s / 100)
+            pdf.set_fill_color(*gc2)
+            pdf.rect(bar_x, bar_y, fill_w, 4, 'F')
+            pdf.set_x(bar_x + bar_max_w + 3)
+            pdf.set_text_color(*gc2)
+            pdf.cell(30, 6, f'{s}/100 ({g})', border=0)
+            pdf.ln()
+
+        # === Predictive Insights ===
+        # Parse from markdown
+        pred_metrics = []
+        for metric_name in ["Watch-Through Rate", "24hr Ad Recall", "Purchase/Action Intent",
+                            "Virality / Shareability", "Cognitive Load", "Optimal Content Length", "Best Content Fit"]:
+            for line in analysis.split('\n'):
+                if metric_name in line and '|' in line:
+                    parts = [p.strip().strip('*') for p in line.split('|')]
+                    parts = [p for p in parts if p]
+                    if len(parts) >= 3:
+                        pred_metrics.append((parts[0].strip('* '), parts[1], parts[2] if len(parts) > 2 else ''))
+                    break
+
+        if pred_metrics:
+            pdf.section_title('Predictive Insights')
+            col_w_pred = [55, 75, 60]
+            pdf.set_fill_color(*CARD_BG)
+            pdf.set_font('Helvetica', 'B', 9)
+            pdf.set_text_color(*WHITE)
+            pdf.cell(col_w_pred[0], 7, 'Metric', fill=True)
+            pdf.cell(col_w_pred[1], 7, 'Prediction', fill=True)
+            pdf.cell(col_w_pred[2], 7, 'Confidence', fill=True)
+            pdf.ln()
+            pdf.set_font('Helvetica', '', 9)
+            row_toggle = False
+            for name, pred, conf in pred_metrics:
+                bg = DARK_BG if row_toggle else BLACK
+                pdf.set_fill_color(*bg)
+                pdf.set_text_color(*WHITE)
+                safe_name = name.encode('ascii', 'ignore').decode('ascii')
+                safe_pred = pred.encode('ascii', 'ignore').decode('ascii')
+                safe_conf = conf.encode('ascii', 'ignore').decode('ascii')
+                pdf.cell(col_w_pred[0], 7, safe_name, fill=True)
+                pdf.cell(col_w_pred[1], 7, safe_pred, fill=True)
+                pdf.set_text_color(*MUTED)
+                pdf.cell(col_w_pred[2], 7, safe_conf, fill=True)
+                pdf.ln()
+                row_toggle = not row_toggle
+
+        # === Key Findings + AI Strategic Action Plan ===
+        # Extract sections from the markdown
+        for section_marker, section_title_str in [
+            ("### Key Findings", "Key Findings"),
+            ("AI Strategic Action Plan", "AI Strategic Action Plan"),
+            ("### Bottom Line", "Bottom Line"),
+        ]:
+            idx = analysis.find(section_marker)
+            if idx == -1:
+                continue
+            # Find end of section (next ### or end of string)
+            rest = analysis[idx:]
+            lines = rest.split('\n')
+            section_lines = []
+            for i, line in enumerate(lines):
+                if i == 0:
+                    continue  # skip the header line itself
+                if line.strip().startswith('### ') or line.strip().startswith('---'):
+                    break
+                section_lines.append(line)
+            body = '\n'.join(section_lines).strip()
+            if not body:
+                continue
+
+            pdf.section_title(section_title_str)
+            # Clean markdown formatting
+            clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', body)  # bold
+            clean = re.sub(r'[#]', '', clean)
+            clean = clean.encode('ascii', 'ignore').decode('ascii')
+            pdf.set_font('Helvetica', '', 9)
+            pdf.set_text_color(*WHITE)
+            pdf.multi_cell(0, 5, clean)
+
         pdf_path = run_dir / "report.pdf"
         pdf.output(str(pdf_path))
         pdf_path_str = str(pdf_path.absolute())
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Failed to generate PDF: {e}")
         
     return run_id, pdf_path_str
@@ -254,29 +520,43 @@ REGION_FUNCTIONS = {
     "7Pm": "Parietal Area 7Pm — visual-spatial orientation",
 }
 
+import torch
+
 def get_model():
     global model
     with model_lock:
         if model is None:
-            print(f"Loading TRIBE v2 model... all extractors → cpu")
-            model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
-            # Force ALL extractors to CPU — MPS crashes on this model's
-            # attention layers (incompatible matmul dimensions 24 vs 8 heads)
+            # We ONLY use CUDA if it exists (i.e., on Modal). 
+            # Macs (MPS) still crash on these attention layers, so they must use CPU.
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"Loading TRIBE v2 model... computing device → {device}")
+            
+            # Pass device to the HuggingFace model if supported natively
+            try:
+                model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache", device=device)
+            except TypeError:
+                # Fallback if TribeModel does not accept device via kwargs
+                model = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
+            
+            # Explicitly force extractors to the selected device
             for attr in ["neuro", "audio_feature", "video_feature", "image_feature", "text_feature"]:
                 extractor = getattr(model.data, attr, None)
                 if extractor is not None:
                     if hasattr(extractor, "device"):
-                        extractor.device = "cpu"
+                        extractor.device = device
                     if hasattr(extractor, "image") and hasattr(extractor.image, "device"):
-                        extractor.image.device = "cpu"
-            print("Model loaded successfully.")
+                        extractor.image.device = device
+            print(f"Model loaded successfully on {device}.")
     return model
 
 
 def analyze_brain_regions(preds, stimulus_description=""):
     """Full brain analysis: regional scores, temporal dynamics, hemispheric laterality, predictive metrics."""
     
-    avg_activation = np.mean(preds, axis=0)
+    # Use absolute values — brain model outputs signed activations where
+    # negative values represent suppression. Both positive and negative
+    # responses indicate neural engagement, so we measure total energy.
+    avg_activation = np.mean(np.abs(preds), axis=0)
     n_vertices = len(avg_activation)
     half = n_vertices // 2
     
@@ -646,7 +926,7 @@ VIEW_LABELS = {
 }
 
 
-def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc=""):
+def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc="", media_path=None):
     """Generate vertical brain plot AND AI analysis, then persist the run."""
     import matplotlib.pyplot as plt
     from tribev2.plotting.utils import robust_normalize
@@ -656,12 +936,14 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     preds, segments = m.predict(events=df, gradio_progress=progress)
     
     progress((0.75, 1.0), desc="Rendering 3D Brain Mesh (Vertical Layout)...")
-    n_to_plot = min(len(preds), 4)
-    sliced_preds = preds[:n_to_plot]
+    
+    # Calculate the global average activation across the entire stimulus
+    avg_pred = np.mean(preds, axis=0)
     views_seq = ["left", "right", "dorsal", "anterior"]
+    n_to_plot = len(views_seq)
     
     # Normalize data globally for consistent colorbar
-    norm_preds = [robust_normalize(p, percentile=95) for p in sliced_preds]
+    norm_pred = robust_normalize(avg_pred, percentile=95)
     
     import textwrap
     import matplotlib.gridspec as gridspec
@@ -674,7 +956,7 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     for i in range(n_to_plot):
         view_name = views_seq[i]
         view_title, view_desc = VIEW_LABELS.get(view_name, ("Brain View", "Neural activation"))
-        raw_act = float(np.mean(np.abs(sliced_preds[i])))
+        raw_act = float(np.mean(np.abs(avg_pred)))
         
         # Wrap the description text so it doesn't bleed off the edge of the figure
         wrapped_desc = textwrap.fill(view_desc, width=45)
@@ -684,7 +966,7 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
         ax_brain.set_facecolor('#09090b')
         
         sm = plotter.plot_surf(
-            norm_preds[i],
+            norm_pred,
             views=view_name,
             axes=[ax_brain], 
             colorbar=False,
@@ -714,7 +996,7 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
     progress((0.95, 1.0), desc="Saving run to history...")
     pdf_path = None
     try:
-        _, pdf_path = save_run(stimulus_type, stimulus_desc, fig, interpretation, region_data)
+        _, pdf_path = save_run(stimulus_type, stimulus_desc, fig, interpretation, region_data, media_path)
     except Exception as e:
         print(f"[Run History] Failed to save: {e}")
     
@@ -725,7 +1007,8 @@ def generate_plot_and_analysis(df, progress, stimulus_type="Text", stimulus_desc
 @spaces.GPU(duration=180)
 def process_text(text, progress=gr.Progress()):
     if not text.strip():
-        return None, ""
+        import gradio as gr
+        return None, "", gr.update(visible=False, value=None)
         
     if len(text) > 150:
         gr.Warning("Text exceeded 150 characters. Truncating to bypass local hardware bottlenecks.")
@@ -746,7 +1029,8 @@ def process_text(text, progress=gr.Progress()):
 @spaces.GPU(duration=180)
 def process_audio(audio_path, progress=gr.Progress()):
     if not audio_path:
-        return None, ""
+        import gradio as gr
+        return None, "", gr.update(visible=False, value=None)
     progress((0.0, 1.0), desc="Loading Audio & Whisper Extractors...")
     progress((0.15, 1.0), desc="Extracting Audio & Phonetics Features...")
     df = get_model().get_events_dataframe(audio_path=audio_path)
@@ -755,16 +1039,22 @@ def process_audio(audio_path, progress=gr.Progress()):
 @spaces.GPU(duration=180)
 def process_video(video_path, progress=gr.Progress()):
     if not video_path:
-        return None, ""
+        import gradio as gr
+        return None, "", gr.update(visible=False, value=None)
     progress((0.0, 1.0), desc="Trimming video and Splitting Frames...")
     
-    ext = os.path.splitext(video_path)[1]
-    trimmed_path = video_path.replace(ext, f"_trimmed{ext}")
-    os.system(f'ffmpeg -y -i "{video_path}" -t 3 "{trimmed_path}" -loglevel quiet')
+    # Build trimmed path safely — do NOT use str.replace() as it corrupts
+    # paths when the extension appears in parent directory names.
+    base, ext = os.path.splitext(video_path)
+    trimmed_path = f"{base}_trimmed_6s{ext}"
+    
+    # Enforce 6.0 seconds with clean re-encoding. 3.0s starved the sequence batcher.
+    # Re-encode (libx264) to guarantee clean keyframes for the vision encoder.
+    os.system(f'ffmpeg -y -i "{video_path}" -t 6 -c:v libx264 -preset ultrafast -c:a aac "{trimmed_path}" -loglevel quiet')
     
     progress((0.15, 1.0), desc="Extracting Video Motion & Semantics via V-JEPA2...")
     df = get_model().get_events_dataframe(video_path=trimmed_path)
-    return generate_plot_and_analysis(df, progress, stimulus_type="Video", stimulus_desc="Video clip (first 3 seconds)")
+    return generate_plot_and_analysis(df, progress, stimulus_type="Video", stimulus_desc="Video clip (first 6 seconds)", media_path=video_path)
 
 
 # --- Custom Theme & Modern Black Dashboard Styling ---
@@ -853,7 +1143,7 @@ Above each brain, our AI notes the precise cognitive system being engaged at tha
                     audio_upload.change(process_audio_upload, inputs=audio_upload, outputs=[audio_in, audio_preview])
                     
                 with gr.Tab("Video Inference"):
-                    gr.Markdown("Upload standard video formats. Auto-trimmed to 3 seconds.")
+                    gr.Markdown("Upload standard video formats. Auto-trimmed to 6 seconds.")
                     video_upload = gr.File(label="Upload Video File", file_types=["video"])
                     video_preview = gr.Video(label="Preview", interactive=False, visible=False)
                     video_in = gr.State()

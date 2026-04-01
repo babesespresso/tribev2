@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: tribe-v2-listener
+    runtime: python
+    buildCommand: pip install -r requirements-listener.txt
+    startCommand: python slack_bot.py
+    envVars:
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_APP_TOKEN
+        sync: false
+      - key: MODAL_WEBHOOK_URL
+        sync: false

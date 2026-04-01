@@ -35,3 +35,8 @@ requests
 tqdm
 transformers
 julius
+
+# Slack Bot
+slack-bolt>=1.18
+slack-sdk>=3.27
+python-dotenv>=1.0
