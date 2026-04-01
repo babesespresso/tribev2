@@ -166,6 +166,51 @@ def _forward_video_to_modal(client, channel, thread_ts, file_info, filename, fil
 def handle_file_shared(event):
     pass
 
+# ── Welcome Banner when bot joins a channel ──────────────────────────
+WELCOME_BANNER = Path(__file__).parent / "assets" / "welcome_banner.png"
+
+@slack_app.event("member_joined_channel")
+def handle_bot_joined(event, client):
+    """Post a welcome banner when the bot is added to a channel."""
+    user_id = event.get("user")
+    channel = event.get("channel")
+
+    # Only fire when it's the bot itself joining, not other users
+    try:
+        auth = client.auth_test()
+        bot_id = auth["user_id"]
+    except Exception:
+        return
+
+    if user_id != bot_id:
+        return
+
+    logger.info(f"Bot was added to channel {channel}. Posting welcome banner.")
+
+    welcome_text = (
+        "🧠 *NeuralAI by Multitude Media*\n\n"
+        "Hey team! I'm your *Neural Engagement Scorecard* bot.\n\n"
+        "*How it works:*\n"
+        "1️⃣  Drop any `.mp4` video into this channel\n"
+        "2️⃣  I'll fire it through a serverless GPU running Meta's V-JEPA2 neural encoder\n"
+        "3️⃣  You'll get a professional PDF scorecard with second-by-second brain activation analytics\n\n"
+        "_Powered by Facebook's TRIBE v2 multimodal brain mapping model._"
+    )
+
+    try:
+        if WELCOME_BANNER.exists():
+            client.files_upload_v2(
+                channel=channel,
+                file=str(WELCOME_BANNER),
+                filename="NeuralAI_Welcome.png",
+                title="NeuralAI by Multitude Media",
+                initial_comment=welcome_text,
+            )
+        else:
+            client.chat_postMessage(channel=channel, text=welcome_text)
+    except Exception as e:
+        logger.error(f"Failed to post welcome banner: {e}")
+
 if __name__ == "__main__":
     print()
     print("╔══════════════════════════════════════════════════════════╗")
