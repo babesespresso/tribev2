@@ -56,15 +56,31 @@ def _process_video_event(event, client):
     thread_ts = event.get("ts")  # We'll reply in-thread
 
     for file_info in files:
-        filename = file_info.get("name", "unknown")
-        ext = Path(filename).suffix.lower()
+        filename = file_info.get("name", "")
+        file_id = file_info.get("id")
+        mimetype = file_info.get("mimetype", "")
 
-        logger.info(f"Found file: {filename} (ext: {ext})")
-        if ext not in VIDEO_EXTENSIONS:
+        # Slack Connect channels redact file metadata — enrich via files.info
+        if (not filename or filename == "unknown") and file_id:
+            try:
+                result = client.files_info(file=file_id)
+                enriched = result.get("file", {})
+                filename = enriched.get("name", filename)
+                mimetype = enriched.get("mimetype", mimetype)
+                file_info = {**file_info, **enriched}  # merge full metadata
+                logger.info(f"Enriched file via API: {filename} ({mimetype})")
+            except Exception as e:
+                logger.warning(f"Could not enrich file metadata: {e}")
+
+        ext = Path(filename).suffix.lower() if filename else ""
+
+        # Check by extension first, fall back to mimetype for Slack Connect
+        is_video = ext in VIDEO_EXTENSIONS or mimetype.startswith("video/")
+
+        logger.info(f"Found file: {filename} (ext: {ext}, mime: {mimetype}, is_video: {is_video})")
+        if not is_video:
             logger.info(f"Skipping non-video file: {filename}")
             continue
-
-        file_id = file_info["id"]
 
         # Deduplicate
         with _processing_lock:
